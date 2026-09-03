@@ -1,100 +1,124 @@
-name: Extract RAG_Cerdas Workspace
+# ============================================================
+# CELL 85 — AGENT CREATOR + SYSTEM CHAT (FIXED: DB Persistence)
+# ============================================================
+def create_agent_interactive(user_id: str):
+    print()
+    print("=" * 70)
+    print("AGENT GENERATOR")
+    print("=" * 70)
+    prompt = input("Masukkan prompt / requirement agent:\n> ").strip()
+    if not prompt:
+        raise ValueError("Prompt agent kosong.")
+    
+    ctx = tenant_from_user(user_id)
+    print("\n🤖 Qwen sedang menganalisis requirement...")
+    requirement = REQUIREMENT_ANALYZER.analyze(prompt)
+    
+    blueprint = AGENT_FACTORY.create(ctx, requirement)
+    
+    # 🔥 PERBAIKAN KRITIS: Simpan Agent ke Database agar bisa dipanggil oleh AGENT_LOADER
+    blueprint_data = {
+        "capabilities": blueprint.capabilities,
+        "objective": blueprint.objective,
+        "system_prompt": f"You are {blueprint.name}. {blueprint.objective}"
+    }
+    with DB_LOCK, SessionLocal() as db:
+        existing = db.get(AgentRecord, blueprint.agent_id)
+        if not existing:
+            db.add(AgentRecord(
+                agent_id=blueprint.agent_id,
+                tenant_id=ctx.tenant_id,
+                name=blueprint.name,
+                domain=blueprint.domain,
+                blueprint=json.dumps(blueprint_data, ensure_ascii=False),
+                state="ACTIVE"
+            ))
+            db.commit()
+            print("\n💾 [DATABASE] Agent berhasil dipersisten ke tabel 'agents'.")
+    
+    print("\n" + "=" * 70)
+    print("✅ AGENT GENERATED & PERSISTED")
+    print("=" * 70)
+    print("Name:", blueprint.name)
+    print("Domain:", blueprint.domain)
+    print("Agent ID:", blueprint.agent_id)
+    print("Objective:", blueprint.objective)
+    print("\nCapabilities:")
+    for capability in blueprint.capabilities:
+        print(f"  - {capability['capability_id']} → {capability['name']}")
+    
+    return blueprint
 
-on:
-  workflow_dispatch:
+def run_intelligent19():
+    print("=" * 70)
+    print("INTELLIGENT19")
+    print("=" * 70)
+    user_id = input("\nUser ID:\n> ").strip()
+    if not user_id:
+        raise ValueError("User ID kosong.")
+    
+    print("\n1 = Generate Agent Baru")
+    print("2 = Gunakan Agent Existing")
+    mode = input("\nPilih [1/2]: ").strip()
+    
+    if mode == "1":
+        blueprint = create_agent_interactive(user_id)
+        agent_id = blueprint.agent_id
+    elif mode == "2":
+        identifier = input("\nMasukkan Agent ID atau Agent Name:\n> ").strip()
+        blueprint = resolve_chat_agent(user_id=user_id, identifier=identifier)
+        agent_id = blueprint.agent_id
+        print(f"\n✅ Agent loaded: {blueprint.name}")
+    else:
+        raise ValueError("Pilihan harus 1 atau 2.")
+    
+    print("\n" + "=" * 70)
+    print("SYSTEM CHAT")
+    print("=" * 70)
+    print("Agent:", blueprint.name)
+    print("Agent ID:", agent_id)
+    print("Ketik 'exit' untuk berhenti.")
+    print("=" * 70)
+    
+    session_id = new_id("chat")
+    while True:
+        message = input("\nYou:\n> ").strip()
+        if not message:
+            continue
+        if message.lower() in {"exit", "quit", "/exit"}:
+            print("\nSession ended.")
+            break
+        
+        try:
+            result = AGENT_CHAT.chat(
+                user_id=user_id,
+                agent_id=agent_id,
+                message=message,
+                session_id=session_id,
+            )
+            session_id = result["session_id"]
+            
+            if result["type"] == "TEXT":
+                print("\nAgent:")
+                print(result["response"])
+            elif result["type"] == "IMAGE":
+                print("\nAgent:")
+                print(result["response"])
+                for artifact in result["media"]["artifacts"]:
+                    print("\n🖼️ IMAGE GENERATED")
+                    print("Artifact:", artifact["artifact_id"])
+                    print("Path:", artifact["local_path"])
+                    print("URL:", artifact["remote_url"])
+            elif result["type"] == "VIDEO":
+                print("\nAgent:")
+                print(result["response"])
+                artifact = result["media"]["artifact"]
+                print("\n🎬 VIDEO GENERATED")
+                print("Artifact:", artifact["artifact_id"])
+                print("Path:", artifact["local_path"])
+                print("URL:", artifact["remote_url"])
+        except Exception as exc:
+            LOGGER.exception("System chat error")
+            print("\n❌ ERROR:", exc)
 
-permissions:
-  contents: read
-
-jobs:
-  extract:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Verify archive
-        run: |
-          set -euo pipefail
-
-          ARCHIVE="workspace(1).tar.gz"
-
-          if [ ! -f "$ARCHIVE" ]; then
-            echo "::error::Archive not found: $ARCHIVE"
-            exit 1
-          fi
-
-          echo "Archive found:"
-          ls -lh "$ARCHIVE"
-
-      - name: Inspect archive
-        run: |
-          set -euo pipefail
-
-          echo "===== ARCHIVE CONTENT ====="
-          tar -tzf "workspace(1).tar.gz" | head -200
-
-      - name: Extract workspace
-        run: |
-          set -euo pipefail
-
-          rm -rf extracted_workspace
-          mkdir -p extracted_workspace
-
-          tar \
-            --extract \
-            --gzip \
-            --file="workspace(1).tar.gz" \
-            --directory=extracted_workspace
-
-      - name: Display workspace structure
-        run: |
-          set -euo pipefail
-
-          echo "===== EXTRACTED STRUCTURE ====="
-
-          find extracted_workspace \
-            -maxdepth 4 \
-            -type f \
-            | sort \
-            | head -500
-
-      - name: Create workspace manifest
-        run: |
-          set -euo pipefail
-
-          find extracted_workspace \
-            -type f \
-            -printf '%p\n' \
-            | sort \
-            > extracted_workspace/workspace_manifest.txt
-
-          echo "===== FILE COUNT ====="
-          wc -l extracted_workspace/workspace_manifest.txt
-
-      - name: Package extracted workspace
-        run: |
-          set -euo pipefail
-
-          tar \
-            --create \
-            --gzip \
-            --file=workspace-extracted.tar.gz \
-            extracted_workspace
-
-          ls -lh workspace-extracted.tar.gz
-
-      - name: Upload extracted workspace
-        uses: actions/upload-artifact@v4
-        with:
-          name: workspace-extracted
-          path: workspace-extracted.tar.gz
-          retention-days: 7
-
-      - name: Upload workspace manifest
-        uses: actions/upload-artifact@v4
-        with:
-          name: workspace-manifest
-          path: extracted_workspace/workspace_manifest.txt
-          retention-days: 7
+print("✅ Cell 85 loaded: run_intelligent19() is now defined (with DB persistence fix).")
