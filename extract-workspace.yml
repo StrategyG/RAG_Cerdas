@@ -1,124 +1,573 @@
-# ============================================================
-# CELL 85 — AGENT CREATOR + SYSTEM CHAT (FIXED: DB Persistence)
-# ============================================================
-def create_agent_interactive(user_id: str):
-    print()
-    print("=" * 70)
-    print("AGENT GENERATOR")
-    print("=" * 70)
-    prompt = input("Masukkan prompt / requirement agent:\n> ").strip()
-    if not prompt:
-        raise ValueError("Prompt agent kosong.")
-    
-    ctx = tenant_from_user(user_id)
-    print("\n🤖 Qwen sedang menganalisis requirement...")
-    requirement = REQUIREMENT_ANALYZER.analyze(prompt)
-    
-    blueprint = AGENT_FACTORY.create(ctx, requirement)
-    
-    # 🔥 PERBAIKAN KRITIS: Simpan Agent ke Database agar bisa dipanggil oleh AGENT_LOADER
-    blueprint_data = {
-        "capabilities": blueprint.capabilities,
-        "objective": blueprint.objective,
-        "system_prompt": f"You are {blueprint.name}. {blueprint.objective}"
-    }
-    with DB_LOCK, SessionLocal() as db:
-        existing = db.get(AgentRecord, blueprint.agent_id)
-        if not existing:
-            db.add(AgentRecord(
-                agent_id=blueprint.agent_id,
-                tenant_id=ctx.tenant_id,
-                name=blueprint.name,
-                domain=blueprint.domain,
-                blueprint=json.dumps(blueprint_data, ensure_ascii=False),
-                state="ACTIVE"
-            ))
-            db.commit()
-            print("\n💾 [DATABASE] Agent berhasil dipersisten ke tabel 'agents'.")
-    
-    print("\n" + "=" * 70)
-    print("✅ AGENT GENERATED & PERSISTED")
-    print("=" * 70)
-    print("Name:", blueprint.name)
-    print("Domain:", blueprint.domain)
-    print("Agent ID:", blueprint.agent_id)
-    print("Objective:", blueprint.objective)
-    print("\nCapabilities:")
-    for capability in blueprint.capabilities:
-        print(f"  - {capability['capability_id']} → {capability['name']}")
-    
-    return blueprint
+```yaml
+name: Extract INTELLIGENT19 Workspace
 
-def run_intelligent19():
-    print("=" * 70)
-    print("INTELLIGENT19")
-    print("=" * 70)
-    user_id = input("\nUser ID:\n> ").strip()
-    if not user_id:
-        raise ValueError("User ID kosong.")
-    
-    print("\n1 = Generate Agent Baru")
-    print("2 = Gunakan Agent Existing")
-    mode = input("\nPilih [1/2]: ").strip()
-    
-    if mode == "1":
-        blueprint = create_agent_interactive(user_id)
-        agent_id = blueprint.agent_id
-    elif mode == "2":
-        identifier = input("\nMasukkan Agent ID atau Agent Name:\n> ").strip()
-        blueprint = resolve_chat_agent(user_id=user_id, identifier=identifier)
-        agent_id = blueprint.agent_id
-        print(f"\n✅ Agent loaded: {blueprint.name}")
-    else:
-        raise ValueError("Pilihan harus 1 atau 2.")
-    
-    print("\n" + "=" * 70)
-    print("SYSTEM CHAT")
-    print("=" * 70)
-    print("Agent:", blueprint.name)
-    print("Agent ID:", agent_id)
-    print("Ketik 'exit' untuk berhenti.")
-    print("=" * 70)
-    
-    session_id = new_id("chat")
-    while True:
-        message = input("\nYou:\n> ").strip()
-        if not message:
-            continue
-        if message.lower() in {"exit", "quit", "/exit"}:
-            print("\nSession ended.")
-            break
-        
-        try:
-            result = AGENT_CHAT.chat(
-                user_id=user_id,
-                agent_id=agent_id,
-                message=message,
-                session_id=session_id,
-            )
-            session_id = result["session_id"]
-            
-            if result["type"] == "TEXT":
-                print("\nAgent:")
-                print(result["response"])
-            elif result["type"] == "IMAGE":
-                print("\nAgent:")
-                print(result["response"])
-                for artifact in result["media"]["artifacts"]:
-                    print("\n🖼️ IMAGE GENERATED")
-                    print("Artifact:", artifact["artifact_id"])
-                    print("Path:", artifact["local_path"])
-                    print("URL:", artifact["remote_url"])
-            elif result["type"] == "VIDEO":
-                print("\nAgent:")
-                print(result["response"])
-                artifact = result["media"]["artifact"]
-                print("\n🎬 VIDEO GENERATED")
-                print("Artifact:", artifact["artifact_id"])
-                print("Path:", artifact["local_path"])
-                print("URL:", artifact["remote_url"])
-        except Exception as exc:
-            LOGGER.exception("System chat error")
-            print("\n❌ ERROR:", exc)
+on:
+  workflow_dispatch:
 
-print("✅ Cell 85 loaded: run_intelligent19() is now defined (with DB persistence fix).")
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    name: Extract and Publish Workspace
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ============================================================
+      # 01 — CHECKOUT
+      # ============================================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ============================================================
+      # 02 — ENVIRONMENT
+      # ============================================================
+      - name: Show environment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "============================================================"
+          echo "INTELLIGENT19 WORKSPACE EXTRACTION"
+          echo "============================================================"
+
+          echo "Runner:"
+          uname -a
+
+          echo
+          echo "Git:"
+          git --version
+
+          echo
+          echo "Working directory:"
+          pwd
+
+          echo
+          echo "Repository:"
+          git remote -v
+
+          echo
+          echo "Files:"
+          ls -lah
+
+      # ============================================================
+      # 03 — LOCATE ARCHIVE
+      # ============================================================
+      - name: Locate workspace archive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "============================================================"
+          echo "SEARCHING FOR ARCHIVE"
+          echo "============================================================"
+
+          ARCHIVE="workspace(1).tar.gz"
+
+          if [[ ! -f "$ARCHIVE" ]]; then
+            echo "ERROR: Archive not found:"
+            echo "$ARCHIVE"
+
+            echo
+            echo "Available tar archives:"
+            find . -maxdepth 3 -type f \
+              \( -name "*.tar.gz" -o -name "*.tgz" -o -name "*.tar" \) \
+              -print
+
+            exit 1
+          fi
+
+          echo "Archive found:"
+          ls -lh "$ARCHIVE"
+
+      # ============================================================
+      # 04 — VALIDATE ARCHIVE
+      # ============================================================
+      - name: Validate archive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ARCHIVE="workspace(1).tar.gz"
+
+          echo "============================================================"
+          echo "VALIDATING ARCHIVE"
+          echo "============================================================"
+
+          gzip -t "$ARCHIVE"
+
+          echo "Archive gzip integrity: OK"
+
+          tar -tzf "$ARCHIVE" > archive_manifest.txt
+
+          echo "Archive tar integrity: OK"
+
+          echo
+          echo "Total archive entries:"
+          wc -l archive_manifest.txt
+
+      # ============================================================
+      # 05 — SHOW ARCHIVE CONTENT
+      #
+      # IMPORTANT:
+      # Do NOT use:
+      #
+      # tar -tzf archive | head
+      #
+      # because tar can receive SIGPIPE and fail the GitHub job.
+      # ============================================================
+      - name: Inspect archive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "============================================================"
+          echo "ARCHIVE CONTENT"
+          echo "============================================================"
+
+          sed -n '1,200p' archive_manifest.txt
+
+          echo
+          echo "============================================================"
+          echo "ARCHIVE STATISTICS"
+          echo "============================================================"
+
+          echo "Total entries:"
+          wc -l archive_manifest.txt
+
+          echo
+          echo "Top-level entries:"
+          awk -F/ '
+            NF > 1 {
+              print $2
+            }
+          ' archive_manifest.txt \
+          | sort -u \
+          | sed '/^$/d'
+
+      # ============================================================
+      # 06 — CHECK EXPECTED STRUCTURE
+      # ============================================================
+      - name: Check INTELLIGENT19 structure
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "============================================================"
+          echo "CHECKING INTELLIGENT19 STRUCTURE"
+          echo "============================================================"
+
+          if ! grep -qE '^(\./)?intelligent19/' archive_manifest.txt; then
+            echo "ERROR: intelligent19/ directory not found in archive."
+            exit 1
+          fi
+
+          echo "intelligent19/ found."
+
+          echo
+          echo "Important directories detected:"
+
+          for DIR in \
+            "evidence" \
+            "reasoning" \
+            "orchestration" \
+            "security" \
+            "storage" \
+            "config"
+          do
+            if grep -qE "^(\./)?intelligent19/.*/${DIR}/|^(\./)?intelligent19/${DIR}/" archive_manifest.txt; then
+              echo "  [OK] $DIR"
+            else
+              echo "  [WARN] $DIR not detected"
+            fi
+          done
+
+      # ============================================================
+      # 07 — PREPARE EXTRACTION DIRECTORY
+      # ============================================================
+      - name: Prepare extraction
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf extracted_workspace
+
+          mkdir -p extracted_workspace
+
+          echo "Extraction directory prepared:"
+          ls -ld extracted_workspace
+
+      # ============================================================
+      # 08 — EXTRACT
+      #
+      # Exclude nested Git repository and Python cache.
+      # ============================================================
+      - name: Extract archive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ARCHIVE="workspace(1).tar.gz"
+
+          echo "============================================================"
+          echo "EXTRACTING WORKSPACE"
+          echo "============================================================"
+
+          tar \
+            --extract \
+            --gzip \
+            --file="$ARCHIVE" \
+            --directory=extracted_workspace \
+            --exclude='./.git' \
+            --exclude='./.git/*' \
+            --exclude='*/.git' \
+            --exclude='*/.git/*' \
+            --exclude='*/__pycache__' \
+            --exclude='*/__pycache__/*' \
+            --exclude='*.pyc'
+
+          echo
+          echo "Extraction completed."
+
+      # ============================================================
+      # 09 — DETECT ACTUAL PROJECT ROOT
+      # ============================================================
+      - name: Detect project root
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "============================================================"
+          echo "DETECTING PROJECT ROOT"
+          echo "============================================================"
+
+          find extracted_workspace \
+            -maxdepth 4 \
+            -type f \
+            -name "__init__.py" \
+            -print \
+            | sed -n '1,100p'
+
+          echo
+          echo "Directories:"
+          find extracted_workspace \
+            -maxdepth 4 \
+            -type d \
+            -print \
+            | sort \
+            | sed -n '1,150p'
+
+      # ============================================================
+      # 10 — NORMALIZE PROJECT STRUCTURE
+      #
+      # Expected archive currently contains:
+      #
+      # intelligent19/
+      # └── intelligent19/
+      #     ├── evidence/
+      #     ├── reasoning/
+      #     ├── orchestration/
+      #     ├── security/
+      #     ├── storage/
+      #     └── config/
+      #
+      # We normalize the inner package into:
+      #
+      # intelligent19/
+      # ├── evidence/
+      # ├── reasoning/
+      # ├── orchestration/
+      # ├── security/
+      # ├── storage/
+      # └── config/
+      # ============================================================
+      - name: Normalize INTELLIGENT19 structure
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "============================================================"
+          echo "NORMALIZING PROJECT STRUCTURE"
+          echo "============================================================"
+
+          SOURCE_ROOT="extracted_workspace/intelligent19/intelligent19"
+
+          if [[ -d "$SOURCE_ROOT" ]]; then
+            echo "Nested package detected:"
+            echo "$SOURCE_ROOT"
+
+            rm -rf normalized_intelligent19
+            mkdir -p normalized_intelligent19
+
+            cp -a "$SOURCE_ROOT"/. normalized_intelligent19/
+
+          elif [[ -d "extracted_workspace/intelligent19" ]]; then
+            echo "Single-level package detected."
+
+            rm -rf normalized_intelligent19
+            mkdir -p normalized_intelligent19
+
+            cp -a extracted_workspace/intelligent19/. \
+              normalized_intelligent19/
+
+          else
+            echo "ERROR: INTELLIGENT19 project root could not be detected."
+            exit 1
+          fi
+
+          echo
+          echo "Normalized project:"
+          find normalized_intelligent19 \
+            -maxdepth 3 \
+            -print \
+            | sort \
+            | sed -n '1,200p'
+
+      # ============================================================
+      # 11 — SANITIZE
+      # ============================================================
+      - name: Sanitize extracted workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "============================================================"
+          echo "SANITIZING WORKSPACE"
+          echo "============================================================"
+
+          find normalized_intelligent19 \
+            -type d \
+            -name ".git" \
+            -prune \
+            -exec rm -rf {} +
+
+          find normalized_intelligent19 \
+            -type d \
+            -name "__pycache__" \
+            -prune \
+            -exec rm -rf {} +
+
+          find normalized_intelligent19 \
+            -type f \
+            \( \
+              -name "*.pyc" \
+              -o -name "*.pyo" \
+            \) \
+            -delete
+
+          echo "Sanitization completed."
+
+      # ============================================================
+      # 12 — VALIDATE PYTHON FILES
+      # ============================================================
+      - name: Validate Python syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "============================================================"
+          echo "PYTHON SYNTAX VALIDATION"
+          echo "============================================================"
+
+          PYTHON_FILES=$(find normalized_intelligent19 \
+            -type f \
+            -name "*.py")
+
+          if [[ -z "$PYTHON_FILES" ]]; then
+            echo "ERROR: No Python files found."
+            exit 1
+          fi
+
+          COUNT=0
+
+          while IFS= read -r FILE; do
+            python -m py_compile "$FILE"
+            COUNT=$((COUNT + 1))
+          done <<< "$PYTHON_FILES"
+
+          echo
+          echo "Python files validated: $COUNT"
+
+      # ============================================================
+      # 13 — CHECK CRITICAL MODULES
+      # ============================================================
+      - name: Validate critical modules
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "============================================================"
+          echo "CRITICAL MODULE VALIDATION"
+          echo "============================================================"
+
+          REQUIRED_DIRS=(
+            "evidence"
+            "reasoning"
+            "orchestration"
+            "security"
+            "storage"
+            "config"
+          )
+
+          FAILED=0
+
+          for DIR in "${REQUIRED_DIRS[@]}"; do
+            if [[ -d "normalized_intelligent19/$DIR" ]]; then
+              echo "[OK] $DIR"
+            else
+              echo "[WARN] $DIR not found"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+
+          echo
+
+          if [[ "$FAILED" -gt 0 ]]; then
+            echo "WARNING: $FAILED expected directories were not found."
+            echo "The workflow will continue because the archive structure"
+            echo "may intentionally differ."
+          fi
+
+      # ============================================================
+      # 14 — SHOW FINAL TREE
+      # ============================================================
+      - name: Show final workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "============================================================"
+          echo "FINAL INTELLIGENT19 WORKSPACE"
+          echo "============================================================"
+
+          find normalized_intelligent19 \
+            -maxdepth 5 \
+            -print \
+            | sort \
+            | sed -n '1,300p'
+
+      # ============================================================
+      # 15 — PUBLISH
+      #
+      # Replace repository intelligent19/ directory with the
+      # normalized extracted workspace.
+      # ============================================================
+      - name: Publish workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "============================================================"
+          echo "PUBLISHING INTELLIGENT19"
+          echo "============================================================"
+
+          rm -rf intelligent19
+
+          mkdir -p intelligent19
+
+          cp -a normalized_intelligent19/. intelligent19/
+
+          echo
+          echo "Published structure:"
+          find intelligent19 \
+            -maxdepth 4 \
+            -print \
+            | sort \
+            | sed -n '1,250p'
+
+      # ============================================================
+      # 16 — GIT STATUS
+      # ============================================================
+      - name: Check Git changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "============================================================"
+          echo "GIT STATUS"
+          echo "============================================================"
+
+          git status --short
+
+      # ============================================================
+      # 17 — CONFIGURE GIT
+      # ============================================================
+      - name: Configure Git
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # ============================================================
+      # 18 — COMMIT
+      # ============================================================
+      - name: Commit extracted workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git add intelligent19/
+
+          if git diff --cached --quiet; then
+            echo "No changes detected."
+            exit 0
+          fi
+
+          git commit \
+            -m "chore: publish extracted INTELLIGENT19 workspace"
+
+      # ============================================================
+      # 19 — PUSH
+      # ============================================================
+      - name: Push to main
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CURRENT_BRANCH=$(git branch --show-current)
+
+          echo "Current branch: $CURRENT_BRANCH"
+
+          if [[ "$CURRENT_BRANCH" != "main" ]]; then
+            echo "ERROR: Workflow must run on main."
+            exit 1
+          fi
+
+          git push origin main
+
+      # ============================================================
+      # 20 — FINAL REPORT
+      # ============================================================
+      - name: Final report
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo
+          echo "============================================================"
+          echo "INTELLIGENT19 EXTRACTION COMPLETE"
+          echo "============================================================"
+
+          echo
+          echo "Published directory:"
+          echo "  intelligent19/"
+
+          echo
+          echo "Git commit:"
+          git log -1 --oneline
+
+          echo
+          echo "Repository status:"
+          git status --short
+
+          echo
+          echo "============================================================"
+          echo "SUCCESS"
+          echo "============================================================"
+```
