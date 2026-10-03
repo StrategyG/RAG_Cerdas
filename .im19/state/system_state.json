@@ -1,0 +1,10 @@
+{
+  "system":"IM19",
+  "runtime_version":"0.1.0",
+  "status":"INITIALIZING",
+  "current_goal":null,
+  "agents":{},
+  "active_tasks":[],
+  "last_event":null,
+  "last_updated":null
+}
