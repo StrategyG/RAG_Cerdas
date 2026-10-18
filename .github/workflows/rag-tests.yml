@@ -34,6 +34,7 @@ jobs:
           test -s scripts/supabase_http.py
           test -s supabase/migrations/20261018182702_claim_ingest_jobs_only.sql
           test -s supabase/migrations/20261018183310_drop_duplicate_ingest_job_index.sql
+          test -s supabase/verification/verify_ingestion_state.sql
           test -d tests
           test -s tests/test_page_chunking.py
           test -s tests/test_eval_metrics.py
