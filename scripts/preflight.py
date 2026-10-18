@@ -2,6 +2,7 @@
 """Validate required secrets and test read-only Supabase/Dropbox connectivity without printing secrets."""
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -61,7 +62,7 @@ def check_dropbox() -> tuple[bool, str]:
             "https://content.dropboxapi.com/2/files/download",
             headers={
                 "Authorization": f"Bearer {token}",
-                "Dropbox-API-Arg": __import__("json").dumps({"path": path}, separators=(",", ":")),
+                "Dropbox-API-Arg": json.dumps({"path": path}, separators=(",", ":")),
             },
             timeout=45,
         )
