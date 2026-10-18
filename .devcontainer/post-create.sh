@@ -9,10 +9,23 @@ python -m pip install -r requirements.txt -r requirements-test.txt
 # Do not copy .env.example to .env: its placeholder key could falsely appear configured.
 # Use GitHub Codespaces Secrets, or create an ignored local .env with real credentials.
 python scripts/preflight.py || status=$?
-if [[ "${status:-0}" -eq 2 ]]; then
-  echo "Codespace dependencies installed; configure required Codespaces Secrets, restart, then rerun preflight."
-elif [[ "${status:-0}" -eq 1 ]]; then
-  echo "Codespace dependencies installed; add source PDFs or configure Dropbox read access before ingestion."
-else
-  echo "Codespaces bootstrap complete."
-fi
+case "${status:-0}" in
+  0)
+    echo "Codespaces bootstrap complete; read-only connectivity checks passed."
+    ;;
+  1)
+    echo "Dependencies installed; Supabase is reachable but no PDF source is configured. Add a local PDF or Dropbox read access."
+    ;;
+  2)
+    echo "Dependencies installed; required Supabase secrets are missing or invalid placeholders. Configure Secrets, restart, and rerun preflight."
+    ;;
+  3)
+    echo "Dependencies installed, but Supabase connectivity/RPC validation failed. Fix the reported error before ingestion."
+    ;;
+  4)
+    echo "Dependencies installed and Supabase reachable, but Dropbox PDF download validation failed. Fix token scope/path before ingestion."
+    ;;
+  *)
+    echo "Preflight exited with unexpected status ${status:-0}; inspect the preflight output before ingestion."
+    ;;
+esac
