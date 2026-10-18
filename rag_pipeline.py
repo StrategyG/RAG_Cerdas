@@ -354,14 +354,23 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
             prepared.append(doc)
         else:
             missing.append(f"{doc.get('source_path')} ({doc.get('document_id')})")
+    if args.limit < 0:
+        raise ValueError("--limit must be >= 0 (0 means no limit)")
+    candidate_count = len(prepared)
+    if args.limit > 0:
+        prepared = prepared[:args.limit]
     if args.dry_run:
         print(json.dumps({
             "mode": "dry_run",
             "documents_matching_local_files_or_dropbox_token": len(prepared),
+            "eligible_documents_before_limit": candidate_count,
+            "selection_limit": args.limit if args.limit > 0 else "all",
             "documents_without_local_file": len(missing),
             "sample_missing_paths": missing[:10],
+            "dropbox_path_validation": "not_performed" if dropbox_token else "not_applicable",
             "model": MODEL_ID,
             "vector_dimensions": MODEL_DIMS,
+            "writes_performed": False,
         }, ensure_ascii=False, indent=2))
         return 0
     if not prepared:
@@ -407,13 +416,14 @@ def main() -> int:
     sub.add_parser("list", help="Read-only status summary")
     ingest = sub.add_parser("ingest", help="Queue available PDFs and run page-aware ingestion + embeddings")
     ingest.add_argument("--pdf-dir", default=os.getenv("PDF_DIR", "data/pdfs"))
-    ingest.add_argument("--status", default="all", choices=["all", "discovered", "queued", "processing", "indexed", "failed", "skipped"])
+    ingest.add_argument("--status", default="discovered", choices=["all", "discovered", "queued", "processing", "indexed", "failed", "skipped"])
     ingest.add_argument("--enqueue", action=argparse.BooleanOptionalAction, default=True,
                         help="Queue eligible documents before processing (default: enabled)")
     ingest.add_argument("--enqueue-only", action="store_true", help="Queue available PDFs, then exit without processing")
     ingest.add_argument("--dry-run", action="store_true", help="Inspect PDF coverage; no database writes")
     ingest.add_argument("--claim-batch", type=int, default=5)
     ingest.add_argument("--embed-batch-size", type=int, default=DEFAULT_EMBED_BATCH)
+    ingest.add_argument("--limit", type=int, default=1, help="Maximum eligible documents per run; use 0 only after pilot validation to process all selected documents.")
     args = parser.parse_args()
 
     client = RAGClient()
