@@ -174,8 +174,6 @@ class PDFSource:
         self.pdf_dir = pdf_dir.resolve()
         self.dropbox_token = dropbox_token
         self.http = requests.Session()
-        self.cache_dir = self.pdf_dir / ".dropbox_cache"
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def local_path(self, document: dict[str, Any]) -> Path | None:
         source_path = str(document.get("source_path") or "").replace("\\", "/")
