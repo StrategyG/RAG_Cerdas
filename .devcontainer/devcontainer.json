@@ -26,7 +26,7 @@
       "description": "Supabase project API URL. For this project: https://uktauwysjkseqrnbjwzy.supabase.co"
     },
     "SUPABASE_SERVICE_ROLE_KEY": {
-      "description": "Server-only Supabase service role or secret key. Never paste into chat or commit to source control."
+      "description": "Server-side Supabase secret key (sb_secret_...) preferred, or legacy service_role JWT. Never use anon/publishable keys; never paste into chat or commit."
     },
     "DROPBOX_ACCESS_TOKEN": {
       "description": "Optional. Dropbox API access token with permission to read the source PDFs."
