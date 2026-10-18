@@ -12,13 +12,13 @@ The devcontainer declares recommended secret names so GitHub can prompt for valu
 
 Required:
 - `SUPABASE_URL` = `https://uktauwysjkseqrnbjwzy.supabase.co`
-- `SUPABASE_SERVICE_ROLE_KEY` = server-only key from Supabase Dashboard → Project Settings → API Keys
+- `SUPABASE_SERVICE_ROLE_KEY` = server-side **Secret key** (`sb_secret_...`) from Supabase Dashboard → Settings → API Keys. A legacy `service_role` JWT also works during migration, but do not use the `anon` or publishable key.
 
 Optional for Dropbox-backed source retrieval:
 - `DROPBOX_ACCESS_TOKEN` = Dropbox token with the content-read permission needed to download PDFs.
 - `DROPBOX_PREFLIGHT_PATH` = optional Dropbox path to a small accessible PDF. Defaults to `/Lesson 4 How emotions can affect your trading results.pdf`.
 
-Never commit secret values, paste them into ChatGPT, or put a service-role key in browser code. The setup script intentionally does not copy placeholder credentials from `.env.example` into `.env`.
+Supabase's new `sb_secret_...` key is not a JWT: this worker sends it in the `apikey` header only. Legacy `service_role` JWTs are sent in both `apikey` and `Authorization: Bearer`. Never commit secret values, paste them into ChatGPT, or put a server key in browser code. See [Supabase API key guidance](https://supabase.com/docs/guides/getting-started/api-keys) and [migration guidance](https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys). The setup script intentionally does not copy placeholder credentials from `.env.example` into `.env`.
 
 ## 3. Verify dependencies and real connections
 
