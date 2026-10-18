@@ -1,0 +1,26 @@
+[
+  {
+    "query_id": "Q001",
+    "query": "Bagaimana keserakahan memengaruhi hasil trading, dan cara apa yang membantu mengendalikannya?",
+    "expected_evidence": "Jelaskan perilaku mengejar profit tidak realistis atau menahan posisi terlalu lama dan langkah disiplin seperti trading plan, target profit, trailing stop, atau mengikuti strategi.",
+    "source_hint": "/Lesson 4 How emotions can affect your trading results.pdf",
+    "relevant_chunk_ids": {},
+    "label_status": "needs_human_review_after_page_aware_ingestion"
+  },
+  {
+    "query_id": "Q002",
+    "query": "Apa dampak ketidakdisiplinan dalam trading?",
+    "expected_evidence": "Jelaskan kesalahan ceroboh, fokus pada potensi keuntungan, serta pengabaian risiko pembalikan harga.",
+    "source_hint": "/Lesson 4 How emotions can affect your trading results.pdf",
+    "relevant_chunk_ids": {},
+    "label_status": "needs_human_review_after_page_aware_ingestion"
+  },
+  {
+    "query_id": "Q003",
+    "query": "Bagaimana harapan yang tidak realistis dapat membuat trader menahan posisi rugi?",
+    "expected_evidence": "Jelaskan bagaimana harapan dapat menunda penutupan posisi rugi atau menghalangi penggunaan stop loss.",
+    "source_hint": "/Lesson 4 How emotions can affect your trading results.pdf",
+    "relevant_chunk_ids": {},
+    "label_status": "needs_human_review_after_page_aware_ingestion"
+  }
+]
