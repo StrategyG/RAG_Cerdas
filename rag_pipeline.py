@@ -347,6 +347,17 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
     dropbox_token = os.getenv("DROPBOX_ACCESS_TOKEN") or None
     source = PDFSource(pdf_dir, dropbox_token)
     all_docs = client.list_documents(args.status)
+    if args.document_id:
+        all_docs = [doc for doc in all_docs if str(doc.get("document_id")) == args.document_id]
+        if not all_docs:
+            print(json.dumps({
+                "mode": "blocked",
+                "reason": "document_id_not_found_for_selected_status",
+                "document_id": args.document_id,
+                "status_filter": args.status,
+                "writes_performed": False,
+            }, ensure_ascii=False, indent=2), file=sys.stderr)
+            return 2
     prepared: list[dict[str, Any]] = []
     missing: list[str] = []
     for doc in all_docs:
@@ -360,19 +371,43 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
     if args.limit > 0:
         prepared = prepared[:args.limit]
     if args.dry_run:
-        print(json.dumps({
+        source_checks: list[dict[str, Any]] = []
+        source_check_failed = False
+        for doc in prepared:
+            try:
+                data = source.get_bytes(doc)
+                if not data.startswith(b"%PDF-"):
+                    raise ValueError("source bytes do not have a PDF signature")
+                source_checks.append({
+                    "document_id": doc["document_id"],
+                    "source_name": doc.get("source_name"),
+                    "source_check": "ok",
+                    "bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                })
+            except Exception as exc:
+                source_check_failed = True
+                source_checks.append({
+                    "document_id": doc.get("document_id"),
+                    "source_name": doc.get("source_name"),
+                    "source_check": "failed",
+                    "error": f"{type(exc).__name__}: {exc}"[:500],
+                })
+        report = {
             "mode": "dry_run",
             "documents_matching_local_files_or_dropbox_token": len(prepared),
             "eligible_documents_before_limit": candidate_count,
             "selection_limit": args.limit if args.limit > 0 else "all",
+            "selected_document_id": args.document_id,
             "documents_without_local_file": len(missing),
             "sample_missing_paths": missing[:10],
-            "dropbox_path_validation": "not_performed" if dropbox_token else "not_applicable",
+            "source_checks": source_checks,
             "model": MODEL_ID,
             "vector_dimensions": MODEL_DIMS,
             "writes_performed": False,
-        }, ensure_ascii=False, indent=2))
-        return 0
+        }
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 2 if source_check_failed or not source_checks else 0
     if not prepared:
         print("No eligible PDFs found. No jobs were queued. Download PDFs to PDF_DIR or set DROPBOX_ACCESS_TOKEN.", file=sys.stderr)
         return 2
@@ -391,7 +426,11 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
     processed = 0
     errors = 0
     while True:
-        claimed = client.rpc("rag_worker_claim_jobs", {"p_worker_id": worker_id, "p_limit": args.claim_batch}) or []
+        claimed = client.rpc("rag_worker_claim_ingest_jobs", {
+            "p_worker_id": worker_id,
+            "p_limit": args.claim_batch,
+            "p_document_ids": [doc["document_id"] for doc in prepared],
+        }) or []
         if not claimed:
             break
         batch_error = False
@@ -417,6 +456,7 @@ def main() -> int:
     ingest = sub.add_parser("ingest", help="Queue available PDFs and run page-aware ingestion + embeddings")
     ingest.add_argument("--pdf-dir", default=os.getenv("PDF_DIR", "data/pdfs"))
     ingest.add_argument("--status", default="discovered", choices=["all", "discovered", "queued", "processing", "indexed", "failed", "skipped"])
+    ingest.add_argument("--document-id", default=None, help="Restrict this run to one exact document UUID (recommended for pilot validation)")
     ingest.add_argument("--enqueue", action=argparse.BooleanOptionalAction, default=True,
                         help="Queue eligible documents before processing (default: enabled)")
     ingest.add_argument("--enqueue-only", action="store_true", help="Queue available PDFs, then exit without processing")
