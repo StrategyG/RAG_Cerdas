@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-if [ -f .env.example ] && [ ! -f .env ]; then cp .env.example .env; fi
-echo "Codespaces setup complete. Configure Codespaces Secrets, then run python scripts/preflight.py."
+python -m pip install -r requirements.txt
+
+# Do not copy .env.example to .env: its placeholder key could falsely appear configured.
+# Use GitHub Codespaces Secrets, or create an ignored local .env with real credentials.
+python scripts/preflight.py || status=$?
+if [[ "${status:-0}" -eq 2 ]]; then
+  echo "Codespace dependencies installed; configure required Codespaces Secrets, restart, then rerun preflight."
+elif [[ "${status:-0}" -eq 1 ]]; then
+  echo "Codespace dependencies installed; add source PDFs or configure Dropbox read access before ingestion."
+else
+  echo "Codespaces bootstrap complete."
+fi
