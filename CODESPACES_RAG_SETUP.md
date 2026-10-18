@@ -1,61 +1,81 @@
 # Institutional RAG on GitHub Codespaces
 
-The branch contains the page-aware ingestion worker, retrieval evaluator, regression tests, and Python 3.11 Codespaces configuration. Ingestion is **not** run automatically.
+This branch contains the page-aware PDF ingestion worker, retrieval evaluator, regression tests, Codespaces environment, and a read-only connectivity preflight. The worker never ingests automatically at Codespace creation.
 
-## 1. Open the Codespace
+## 1. Create a Codespace from the right branch
 
-Open [this branch in GitHub](https://github.com/StrategyG/RAG_Cerdas/tree/codespaces-institutional-rag), then choose **Code → Codespaces → Create codespace**. On Android, use the browser's desktop-site mode if needed.
+Open [the branch](https://github.com/StrategyG/RAG_Cerdas/tree/codespaces-institutional-rag), then choose **Code → Codespaces → Create codespace**. On Android, use desktop-site mode if GitHub hides the Code menu. Use the current branch; do not start from `main` unless these changes have been merged there.
 
-## 2. Configure credentials as Codespaces Secrets
+## 2. Provide secrets securely
 
-In repository **Settings → Secrets and variables → Codespaces**, add:
+The devcontainer declares recommended secret names so GitHub can prompt for values during Codespace creation. If a Codespace already exists, configure the secrets in GitHub **Settings → Secrets and variables → Codespaces**, then restart the Codespace.
+
+Required:
 - `SUPABASE_URL` = `https://uktauwysjkseqrnbjwzy.supabase.co`
-- `SUPABASE_SERVICE_ROLE_KEY` = the server-only key from Supabase Dashboard → Project Settings → API Keys
-- Optional `DROPBOX_ACCESS_TOKEN` with the Dropbox content-read scope needed to download source PDFs.
+- `SUPABASE_SERVICE_ROLE_KEY` = server-only key from Supabase Dashboard → Project Settings → API Keys
 
-Restart the Codespace after changing secrets. Never commit real credentials or place the service-role key in browser code. The bootstrap intentionally does not copy `.env.example` into `.env`, because its key is a placeholder.
+Optional for Dropbox-backed source retrieval:
+- `DROPBOX_ACCESS_TOKEN` = Dropbox token with the content-read permission needed to download PDFs.
+- `DROPBOX_PREFLIGHT_PATH` = optional Dropbox path to a small accessible PDF. Defaults to `/Lesson 4 How emotions can affect your trading results.pdf`.
 
-## 3. Verify the environment before touching the database
+Never commit secret values, paste them into ChatGPT, or put a service-role key in browser code. The setup script intentionally does not copy placeholder credentials from `.env.example` into `.env`.
 
-The devcontainer installs `requirements.txt` automatically. Run:
+## 3. Verify dependencies and real connections
+
+The devcontainer installs `requirements.txt`. In the terminal:
 
 ```bash
 source .venv/bin/activate
 python scripts/preflight.py
 python -m compileall rag_pipeline.py eval_retrieval.py scripts/preflight.py
 python -m pytest -q --strict-config --strict-markers tests
-python rag_pipeline.py list
-python rag_pipeline.py ingest --dry-run --status discovered --limit 1
 ```
 
-The preflight checks that required values are present without printing them. The list operation is read-only. The dry-run does not enqueue jobs or write document/chunk data. **When Dropbox is configured, dry-run does not verify each remote path/token; it only marks Dropbox as a potential source.** A real one-document pilot is needed to prove Dropbox access.
+Preflight now makes a **read-only request** to `rag_worker_list_documents_page` using the actual Supabase URL/key. If Dropbox token is set, it downloads the configured preflight PDF and verifies its PDF signature. It prints only connection status—not secret values. An HTTP/auth/scope failure is a blocker, not a successful setup.
 
-## 4. Run a one-document pilot
+## 4. Verify the pilot document before writing
 
-Only after the dry-run output looks correct, process one discovered document:
+The known pilot document is:
+
+- Name: `Lesson 4 How emotions can affect your trading results.pdf`
+- Supabase document UUID: `041f30c6-5957-49c0-a29b-e3c29a4e1ab0`
+- Dropbox path: `/Lesson 4 How emotions can affect your trading results.pdf`
+
+Run the read-only list command and a dry-run against exactly that document:
 
 ```bash
-python rag_pipeline.py ingest --status discovered --limit 1
+python rag_pipeline.py list
+python rag_pipeline.py ingest --document-id 041f30c6-5957-49c0-a29b-e3c29a4e1ab0 --status discovered --limit 1 --dry-run
 ```
 
-The default selection is incremental (status `discovered`, limit 1) to avoid reprocessing the entire corpus by mistake. The worker creates page-bounded chunks and 384-dimensional `intfloat/multilingual-e5-small` embeddings, then records success only when all chunks satisfy page and embedding checks. CPU processing may be slow and the first run downloads model weights.
+Dry-run now attempts to retrieve the actual local/Dropbox bytes and verifies the PDF signature and SHA-256. It does not enqueue jobs or write chunks/embeddings. It must show exactly the intended document and `source_check: ok`. Dropbox-backed dry-run is a read operation but does download the selected PDF.
 
-Inspect the JSON output and verify Supabase counts/status before continuing. If the pilot succeeds, process another batch using `--limit 1`. Only after the pipeline is proven should you expand the selection. To process all documents of a specific status intentionally, specify that status and `--limit 0`; do not start with an entire-corpus run.
+If the document status has changed from `discovered`, choose the matching status explicitly after checking `list`. Do not use `--status all --limit 0` for the initial pilot.
 
-If no local PDF exists, configure a Dropbox token with the necessary read access or add source PDFs under `data/pdfs/`. PDFs, model weights, `.env`, and evaluation outputs must not be committed.
+## 5. Run one-document ingestion
 
-## 5. Evaluate retrieval
+Only after the dry-run and preflight pass:
 
-After real page-aware ingestion and embeddings exist:
+```bash
+python rag_pipeline.py ingest --document-id 041f30c6-5957-49c0-a29b-e3c29a4e1ab0 --status discovered --limit 1
+```
+
+The worker splits extracted text within individual PDF pages, writes page-numbered chunks, generates normalized 384-dimensional `intfloat/multilingual-e5-small` embeddings, and updates the indexed state only when all chunks have embeddings and page mappings. The database RPC will reject stale content hashes or unmapped chunks.
+
+The queue now has a dedicated ingest-only claim RPC and a partial unique index to avoid more than one active ingest job per document/type. The worker scopes claims to the selected document UUIDs; it will not accidentally claim other job types or unrelated documents. CPU embedding may be slow on first run because model weights must be downloaded.
+
+Verify the resulting document/chunk counts in Supabase before processing another PDF. If a document fails, read its `ingest_error`; correct the source or token problem first. Retry only that document, with its actual current status.
+
+## 6. Evaluate only with reviewed labels
 
 ```bash
 python eval_retrieval.py --cases eval_cases.json --k 5
 ```
 
-The pilot evaluation cases contain questions and expected evidence but no human-reviewed gold chunk IDs. Consequently, ranking results can be inspected but precision, recall, MRR, and nDCG are not reported until reviewers label the new chunk IDs in `relevant_chunk_ids`. Page-citation accuracy also requires comparing returned page numbers to the original PDFs.
+The three pilot questions have expected evidence notes but no manually reviewed gold chunk IDs. The evaluator inspects keyword and semantic results, but it must withhold P@5, Recall@5, MRR@5, and nDCG@5 until a reviewer labels the new chunk IDs under `relevant_chunk_ids`. Citation accuracy requires checking page numbers against the original PDFs.
 
-## 6. CI behavior and limits
+## 7. What CI proves—and does not prove
 
-GitHub Actions now fails if required pipeline/evaluation/test files are missing. It compiles required Python modules, runs tests with lightweight dependencies, and validates the evaluation-case schema. CI validates local code, **not** live Supabase credentials, Dropbox access, model download, or end-to-end ingestion.
+GitHub Actions fails if required source/test files are absent. It compiles the worker and evaluator, runs regression tests, and validates evaluation cases. This is code validation only; it does not use production secrets, start a Codespace, download the embedding model, or execute real ingestion.
 
-The actual repository branch and cloud database state should be treated separately: a successful CI run is not proof that Codespaces has started, or that the corpus has been re-ingested.
+A production-ready claim requires the one-document Codespaces pilot, successful Supabase state checks, retrieval quality labels, and original-PDF citation checks.
