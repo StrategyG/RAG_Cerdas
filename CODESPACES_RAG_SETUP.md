@@ -64,7 +64,7 @@ The worker splits extracted text within individual PDF pages, writes page-number
 
 The queue now has a dedicated ingest-only claim RPC and a partial unique index to avoid more than one active ingest job per document/type. The worker scopes claims to the selected document UUIDs; it will not accidentally claim other job types or unrelated documents. CPU embedding may be slow on first run because model weights must be downloaded.
 
-Verify the resulting document/chunk counts in Supabase before processing another PDF. If a document fails, read its `ingest_error`; correct the source or token problem first. Retry only that document, with its actual current status.
+Run the read-only SQL checks in [`supabase/verification/verify_ingestion_state.sql`](https://github.com/StrategyG/RAG_Cerdas/blob/codespaces-institutional-rag/supabase/verification/verify_ingestion_state.sql) and inspect the resulting document/chunk counts before processing another PDF. If a document fails, read its `ingest_error`; correct the source or token problem first. Retry only that document, with its actual current status.
 
 ## 6. Evaluate only with reviewed labels
 
