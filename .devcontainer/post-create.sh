@@ -4,7 +4,7 @@ set -euo pipefail
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt -r requirements-test.txt
 
 # Do not copy .env.example to .env: its placeholder key could falsely appear configured.
 # Use GitHub Codespaces Secrets, or create an ignored local .env with real credentials.
