@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 import fitz  # PyMuPDF
 import requests
 from dotenv import load_dotenv
+from scripts.supabase_http import build_supabase_headers
 
 MODEL_ID = "intfloat/multilingual-e5-small"
 MODEL_DIMS = 384
@@ -106,7 +107,7 @@ def extract_page_chunks(pdf_bytes: bytes, tokenizer: Any, max_tokens: int = CHUN
 class RAGClient:
     def __init__(self) -> None:
         self.base_url = os.getenv("SUPABASE_URL", "").rstrip("/")
-        self.service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+        self.service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
         parsed = urlparse(self.base_url)
         if not self.base_url or not self.service_key:
             raise RuntimeError(
@@ -118,13 +119,7 @@ class RAGClient:
         if self.service_key.startswith("REPLACE_WITH"):
             raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is a placeholder, not a usable secret.")
         self.http = requests.Session()
-        self.headers = {
-            "apikey": self.service_key,
-            "Authorization": f"Bearer {self.service_key}",
-            "Content-Type": "application/json",
-            "Accept-Profile": "public",
-            "Content-Profile": "public",
-        }
+        self.headers = build_supabase_headers(self.service_key)
 
     def rpc(self, name: str, body: dict[str, Any], timeout: int = 120) -> Any:
         response = self.http.post(
