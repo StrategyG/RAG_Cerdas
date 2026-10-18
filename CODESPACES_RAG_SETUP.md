@@ -22,7 +22,7 @@ Supabase's new `sb_secret_...` key is not a JWT: this worker sends it in the `ap
 
 ## 3. Verify dependencies and real connections
 
-The devcontainer installs `requirements.txt`. In the terminal:
+The devcontainer installs both runtime (`requirements.txt`) and test (`requirements-test.txt`) dependencies. In the terminal:
 
 ```bash
 source .venv/bin/activate
