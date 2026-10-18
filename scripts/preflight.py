@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 import requests
 from dotenv import load_dotenv
+from scripts.supabase_http import build_supabase_headers
 
 load_dotenv()
 
@@ -32,13 +33,7 @@ def check_supabase() -> tuple[bool, str]:
     try:
         response = requests.post(
             f"{base_url}/rest/v1/rpc/rag_worker_list_documents_page",
-            headers={
-                "apikey": key,
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-                "Accept-Profile": "public",
-                "Content-Profile": "public",
-            },
+            headers=build_supabase_headers(key),
             json={"p_limit": 1, "p_offset": 0, "p_status": "all"},
             timeout=20,
         )
