@@ -473,6 +473,7 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
             "documents_source_valid": len(prepared),
             "documents_source_failed": len(missing) + sum(1 for item in source_checks if item["source_check"] == "failed"),
             "selection_limit": args.limit if args.limit > 0 else "all_recoverable",
+            "selected_document_id": args.document_id,
             "source_audit_failures": missing,
             "source_checks": source_checks,
             "model": MODEL_ID,
