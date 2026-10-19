@@ -81,6 +81,7 @@ def test_dry_run_checks_only_the_selected_source_and_performs_no_writes(monkeypa
     assert report["selected_document_id"] == PILOT_ID
     assert report["source_checks"][0]["source_check"] == "ok"
     assert report["writes_performed"] is False
+    assert report["selected_document_id"] == PILOT_ID
     assert client.rpc_calls == []
 
 
@@ -108,4 +109,34 @@ def test_dry_run_blocks_when_source_download_fails(monkeypatch, capsys):
     assert rc == 2
     assert report["source_checks"][0]["source_check"] == "failed"
     assert report["writes_performed"] is False
+    assert client.rpc_calls == []
+
+
+
+def test_source_audit_is_read_only_and_reports_coverage(monkeypatch, capsys):
+    class FakeSource:
+        def __init__(self, pdf_dir, dropbox_token):
+            pass
+
+        def check_source(self, doc):
+            return {"ok": doc["document_id"] == PILOT_ID, "source": doc["source_path"],
+                    "reason": None if doc["document_id"] == PILOT_ID else "not_found"}
+
+    monkeypatch.setattr(rag_pipeline, "PDFSource", FakeSource)
+    args = args_for_dry_run()
+    args.dry_run = False
+    args.audit_sources = True
+    args.limit = 0
+    client = FakeClient()
+
+    rc = rag_pipeline.command_ingest(args, client)
+    report = json.loads(capsys.readouterr().out)
+
+    assert rc == 2
+    assert report["mode"] == "source_audit"
+    assert report["documents_selected"] == 2
+    assert report["sources_ok"] == 1
+    assert report["sources_failed"] == 1
+    assert report["database_writes"] is False
+    assert report["pdf_downloads"] is False
     assert client.rpc_calls == []
