@@ -197,31 +197,85 @@ class PDFSource:
                     return path_matches[0]
         return None
 
+    def check_source(self, document: dict[str, Any]) -> dict[str, Any]:
+        """Check source existence/type/size without downloading a Dropbox PDF."""
+        local = self.local_path(document)
+        expected_size = int(document.get("file_size_bytes") or 0)
+        if local is not None:
+            try:
+                size = local.stat().st_size
+                with local.open("rb") as handle:
+                    signature = handle.read(5)
+                if signature != b"%PDF-":
+                    return {"ok": False, "source": str(local), "reason": "invalid_pdf_signature"}
+                if expected_size and size != expected_size:
+                    return {"ok": False, "source": str(local), "reason": "size_mismatch",
+                            "expected_bytes": expected_size, "actual_bytes": size}
+                return {"ok": True, "source": str(local), "bytes": size}
+            except OSError as exc:
+                return {"ok": False, "source": str(local), "reason": type(exc).__name__}
+        if not self.dropbox_token:
+            return {"ok": False, "source": str(document.get("source_path") or ""),
+                    "reason": "not_local_and_dropbox_token_missing"}
+        path = str(document.get("source_path") or "")
+        if not path.startswith("/"):
+            return {"ok": False, "source": path, "reason": "dropbox_path_not_absolute"}
+        try:
+            resp = self.http.post(
+                "https://api.dropboxapi.com/2/files/get_metadata",
+                headers={
+                    "Authorization": f"Bearer {self.dropbox_token}",
+                    "Content-Type": "application/json",
+                },
+                json={"path": path},
+                timeout=45,
+            )
+            if not resp.ok:
+                return {"ok": False, "source": path, "reason": f"dropbox_metadata_http_{resp.status_code}"}
+            metadata = resp.json()
+            if metadata.get(".tag") != "file":
+                return {"ok": False, "source": path, "reason": "dropbox_path_is_not_a_file"}
+            actual_size = int(metadata.get("size") or 0)
+            if expected_size and actual_size != expected_size:
+                return {"ok": False, "source": path, "reason": "size_mismatch",
+                        "expected_bytes": expected_size, "actual_bytes": actual_size}
+            if not str(metadata.get("name") or path).lower().endswith(".pdf"):
+                return {"ok": False, "source": path, "reason": "not_a_pdf_filename"}
+            return {"ok": True, "source": path, "bytes": actual_size}
+        except Exception as exc:
+            return {"ok": False, "source": path, "reason": type(exc).__name__}
+
     def get_bytes(self, document: dict[str, Any]) -> bytes:
         local = self.local_path(document)
         if local is not None:
-            return local.read_bytes()
-        if not self.dropbox_token:
-            raise FileNotFoundError(
-                f"PDF not found locally for {document.get('source_path')!r}; put it under PDF_DIR or configure DROPBOX_ACCESS_TOKEN."
+            data = local.read_bytes()
+        else:
+            if not self.dropbox_token:
+                raise FileNotFoundError(
+                    f"PDF not found locally for {document.get('source_path')!r}; put it under PDF_DIR or configure DROPBOX_ACCESS_TOKEN."
+                )
+            path = str(document.get("source_path") or "")
+            if not path.startswith("/"):
+                raise ValueError(f"Dropbox source_path must be an absolute Dropbox path, got {path!r}")
+            resp = self.http.post(
+                "https://content.dropboxapi.com/2/files/download",
+                headers={
+                    "Authorization": f"Bearer {self.dropbox_token}",
+                    "Dropbox-API-Arg": json.dumps({"path": path}, separators=(",", ":")),
+                },
+                timeout=180,
             )
-        path = str(document.get("source_path") or "")
-        if not path.startswith("/"):
-            raise ValueError(f"Dropbox source_path must be an absolute Dropbox path, got {path!r}")
-        resp = self.http.post(
-            "https://content.dropboxapi.com/2/files/download",
-            headers={
-                "Authorization": f"Bearer {self.dropbox_token}",
-                "Dropbox-API-Arg": json.dumps({"path": path}, separators=(",", ":")),
-            },
-            timeout=180,
-        )
-        if not resp.ok:
-            # Do not include the authorization header in any exception.
-            raise RuntimeError(f"Dropbox download failed for {path} ({resp.status_code}): {resp.text[:500]}")
-        if not resp.content.startswith(b"%PDF-"):
-            raise ValueError(f"Dropbox response for {path} does not look like a PDF")
-        return resp.content
+            if not resp.ok:
+                raise RuntimeError(f"Dropbox download failed for {path} ({resp.status_code})")
+            data = resp.content
+        if not data.startswith(b"%PDF-"):
+            raise ValueError(f"Source for {document.get('source_path')} does not look like a PDF")
+        expected_size = int(document.get("file_size_bytes") or 0)
+        if expected_size and len(data) != expected_size:
+            raise ValueError(
+                f"Source size changed for {document.get('source_path')}: expected {expected_size}, got {len(data)}"
+            )
+        return data
 
 
 def load_embedding_model():
@@ -340,8 +394,11 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
     dropbox_token = os.getenv("DROPBOX_ACCESS_TOKEN") or None
     source = PDFSource(pdf_dir, dropbox_token)
     all_docs = client.list_documents(args.status)
+    if args.status == "all" and not args.reprocess_indexed:
+        # "all" means all recoverable work, not reprocessing documents already indexed.
+        all_docs = [doc for doc in all_docs if doc.get("ingest_status") not in {"indexed", "skipped"}]
     if args.document_id:
-        all_docs = [doc for doc in all_docs if str(doc.get("document_id")) == args.document_id]
+        all_docs = [doc for doc in all_docs if str(doc.get("id")) == args.document_id]
         if not all_docs:
             print(json.dumps({
                 "mode": "blocked",
@@ -351,28 +408,52 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
                 "writes_performed": False,
             }, ensure_ascii=False, indent=2), file=sys.stderr)
             return 2
-    prepared: list[dict[str, Any]] = []
-    missing: list[str] = []
-    for doc in all_docs:
-        if dropbox_token or source.local_path(doc) is not None:
-            prepared.append(doc)
-        else:
-            missing.append(f"{doc.get('source_path')} ({doc.get('document_id')})")
     if args.limit < 0:
         raise ValueError("--limit must be >= 0 (0 means no limit)")
-    candidate_count = len(prepared)
-    if args.limit > 0:
-        prepared = prepared[:args.limit]
+    candidate_count = len(all_docs)
+    selected = all_docs[:args.limit] if args.limit > 0 else all_docs
+
+    # Audit-only mode uses Dropbox metadata; it does not download PDFs or write to Supabase.
+    if args.audit_sources:
+        checks = []
+        for doc in selected:
+            check = source.check_source(doc)
+            checks.append({
+                "document_id": doc.get("id"),
+                "source_name": doc.get("source_name"),
+                "ingest_status": doc.get("ingest_status"),
+                **check,
+            })
+        good = sum(1 for item in checks if item["ok"])
+        report = {
+            "mode": "source_audit",
+            "documents_selected": len(selected),
+            "eligible_before_limit": candidate_count,
+            "selection_limit": args.limit if args.limit > 0 else "all_recoverable",
+            "sources_ok": good,
+            "sources_failed": len(checks) - good,
+            "results": checks,
+            "database_writes": False,
+            "pdf_downloads": False,
+        }
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if checks and good == len(checks) else 2
+
+    # Verify source metadata/signature and expected file size before queuing any work.
+    checks = [(doc, source.check_source(doc)) for doc in selected]
+    prepared = [doc for doc, check in checks if check["ok"]]
+    missing = [
+        {"document_id": doc.get("id"), "source_name": doc.get("source_name"), **check}
+        for doc, check in checks if not check["ok"]
+    ]
     if args.dry_run:
         source_checks: list[dict[str, Any]] = []
         source_check_failed = False
         for doc in prepared:
             try:
                 data = source.get_bytes(doc)
-                if not data.startswith(b"%PDF-"):
-                    raise ValueError("source bytes do not have a PDF signature")
                 source_checks.append({
-                    "document_id": doc["document_id"],
+                    "document_id": doc["id"],
                     "source_name": doc.get("source_name"),
                     "source_check": "ok",
                     "bytes": len(data),
@@ -381,39 +462,52 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
             except Exception as exc:
                 source_check_failed = True
                 source_checks.append({
-                    "document_id": doc.get("document_id"),
+                    "document_id": doc.get("id"),
                     "source_name": doc.get("source_name"),
                     "source_check": "failed",
                     "error": f"{type(exc).__name__}: {exc}"[:500],
                 })
         report = {
             "mode": "dry_run",
-            "documents_matching_local_files_or_dropbox_token": len(prepared),
-            "eligible_documents_before_limit": candidate_count,
-            "selection_limit": args.limit if args.limit > 0 else "all",
-            "selected_document_id": args.document_id,
-            "documents_without_local_file": len(missing),
-            "sample_missing_paths": missing[:10],
+            "documents_selected": len(selected),
+            "documents_source_valid": len(prepared),
+            "documents_source_failed": len(missing) + sum(1 for item in source_checks if item["source_check"] == "failed"),
+            "selection_limit": args.limit if args.limit > 0 else "all_recoverable",
+            "source_audit_failures": missing,
             "source_checks": source_checks,
             "model": MODEL_ID,
             "vector_dimensions": MODEL_DIMS,
             "writes_performed": False,
         }
         print(json.dumps(report, ensure_ascii=False, indent=2))
-        return 2 if source_check_failed or not source_checks else 0
+        return 2 if source_check_failed or missing or not source_checks else 0
     if not prepared:
-        print("No eligible PDFs found. No jobs were queued. Download PDFs to PDF_DIR or set DROPBOX_ACCESS_TOKEN.", file=sys.stderr)
+        print(json.dumps({
+            "mode": "blocked",
+            "reason": "no_selected_documents_have_verified_sources",
+            "selected_documents": len(selected),
+            "source_failures": missing[:50],
+            "writes_performed": False,
+        }, ensure_ascii=False, indent=2), file=sys.stderr)
         return 2
     if args.enqueue:
-        ids = [doc["document_id"] for doc in prepared]
+        ids = [str(doc["id"]) for doc in prepared]
         enqueued = 0
         for start in range(0, len(ids), 100):
-            result = client.rpc("rag_worker_enqueue_jobs", {"p_document_ids": ids[start:start + 100], "p_job_type": "ingest"})
+            result = client.rpc("rag_worker_enqueue_jobs", {
+                "p_document_ids": ids[start:start + 100],
+                "p_job_type": "ingest",
+            })
             enqueued += int(result or 0)
-        print(json.dumps({"documents_found": len(prepared), "jobs_newly_enqueued": enqueued,
-                          "missing_files_skipped": len(missing)}, ensure_ascii=False))
+        print(json.dumps({
+            "documents_source_valid": len(prepared),
+            "jobs_newly_enqueued": enqueued,
+            "source_failures_skipped": len(missing),
+            "sample_source_failures": missing[:20],
+        }, ensure_ascii=False))
     if args.enqueue_only:
-        return 0
+        return 2 if missing else 0
+
     model = load_embedding_model()
     worker_id = f"codespaces-{os.getenv('CODESPACE_NAME', 'local')}"
     processed = 0
@@ -422,24 +516,33 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
         claimed = client.rpc("rag_worker_claim_ingest_jobs", {
             "p_worker_id": worker_id,
             "p_limit": args.claim_batch,
-            "p_document_ids": [doc["document_id"] for doc in prepared],
+            "p_document_ids": [str(doc["id"]) for doc in prepared],
         }) or []
         if not claimed:
             break
-        batch_error = False
         for row in claimed:
             job = dict(row)
             job["worker_id"] = worker_id
             result = process_job(client, source, model, job, args.embed_batch_size)
-            print(json.dumps(result, ensure_ascii=False))
+            print(json.dumps(result, ensure_ascii=False), flush=True)
             processed += 1
             if result["status"] == "error":
                 errors += 1
-                batch_error = True
-        if batch_error:
+                if not args.continue_on_error:
+                    break
+        if errors and not args.continue_on_error:
             break
-    print(json.dumps({"processed_jobs": processed, "errors": errors, "model": MODEL_ID}, ensure_ascii=False))
-    return 1 if errors else 0
+    summary = {
+        "selected_documents": len(selected),
+        "source_valid_documents": len(prepared),
+        "source_failed_documents": len(missing),
+        "processed_jobs": processed,
+        "errors": errors,
+        "model": MODEL_ID,
+        "continue_on_error": args.continue_on_error,
+    }
+    print(json.dumps(summary, ensure_ascii=False), flush=True)
+    return 1 if errors or missing else 0
 
 
 def main() -> int:
@@ -450,6 +553,9 @@ def main() -> int:
     ingest.add_argument("--pdf-dir", default=os.getenv("PDF_DIR", "data/pdfs"))
     ingest.add_argument("--status", default="discovered", choices=["all", "discovered", "queued", "processing", "indexed", "failed", "skipped"])
     ingest.add_argument("--document-id", default=None, help="Restrict this run to one exact document UUID (recommended for pilot validation)")
+    ingest.add_argument("--audit-sources", action="store_true", help="Check source metadata/signature without downloading PDFs or writing to the database")
+    ingest.add_argument("--reprocess-indexed", action="store_true", help="Include indexed/skipped documents when --status all is selected")
+    ingest.add_argument("--continue-on-error", action="store_true", help="Continue through the selected corpus after individual document failures")
     ingest.add_argument("--enqueue", action=argparse.BooleanOptionalAction, default=True,
                         help="Queue eligible documents before processing (default: enabled)")
     ingest.add_argument("--enqueue-only", action="store_true", help="Queue available PDFs, then exit without processing")
