@@ -514,9 +514,10 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
     processed = 0
     errors = 0
     while True:
+        claim_limit = args.claim_batch if getattr(args, "continue_on_error", False) else 1
         claimed = client.rpc("rag_worker_claim_ingest_jobs", {
             "p_worker_id": worker_id,
-            "p_limit": args.claim_batch,
+            "p_limit": claim_limit,
             "p_document_ids": [str(doc["document_id"]) for doc in prepared],
         }) or []
         if not claimed:
