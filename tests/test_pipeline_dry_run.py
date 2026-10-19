@@ -124,6 +124,7 @@ def test_source_audit_is_read_only_and_reports_coverage(monkeypatch, capsys):
 
     monkeypatch.setattr(rag_pipeline, "PDFSource", FakeSource)
     args = args_for_dry_run()
+    args.document_id = None
     args.dry_run = False
     args.audit_sources = True
     args.limit = 0
