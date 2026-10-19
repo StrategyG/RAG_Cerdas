@@ -394,11 +394,11 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
     dropbox_token = os.getenv("DROPBOX_ACCESS_TOKEN") or None
     source = PDFSource(pdf_dir, dropbox_token)
     all_docs = client.list_documents(args.status)
-    if args.status == "all" and not args.reprocess_indexed:
+    if args.status == "all" and not getattr(args, "reprocess_indexed", False):
         # "all" means all recoverable work, not reprocessing documents already indexed.
         all_docs = [doc for doc in all_docs if doc.get("ingest_status") not in {"indexed", "skipped"}]
     if args.document_id:
-        all_docs = [doc for doc in all_docs if str(doc.get("id")) == args.document_id]
+        all_docs = [doc for doc in all_docs if str(doc.get("document_id")) == args.document_id]
         if not all_docs:
             print(json.dumps({
                 "mode": "blocked",
@@ -414,12 +414,12 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
     selected = all_docs[:args.limit] if args.limit > 0 else all_docs
 
     # Audit-only mode uses Dropbox metadata; it does not download PDFs or write to Supabase.
-    if args.audit_sources:
+    if getattr(args, "audit_sources", False):
         checks = []
         for doc in selected:
             check = source.check_source(doc)
             checks.append({
-                "document_id": doc.get("id"),
+                "document_id": doc.get("document_id"),
                 "source_name": doc.get("source_name"),
                 "ingest_status": doc.get("ingest_status"),
                 **check,
@@ -443,7 +443,7 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
     checks = [(doc, source.check_source(doc)) for doc in selected]
     prepared = [doc for doc, check in checks if check["ok"]]
     missing = [
-        {"document_id": doc.get("id"), "source_name": doc.get("source_name"), **check}
+        {"document_id": doc.get("document_id"), "source_name": doc.get("source_name"), **check}
         for doc, check in checks if not check["ok"]
     ]
     if args.dry_run:
@@ -453,7 +453,7 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
             try:
                 data = source.get_bytes(doc)
                 source_checks.append({
-                    "document_id": doc["id"],
+                    "document_id": doc["document_id"],
                     "source_name": doc.get("source_name"),
                     "source_check": "ok",
                     "bytes": len(data),
@@ -462,7 +462,7 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
             except Exception as exc:
                 source_check_failed = True
                 source_checks.append({
-                    "document_id": doc.get("id"),
+                    "document_id": doc.get("document_id"),
                     "source_name": doc.get("source_name"),
                     "source_check": "failed",
                     "error": f"{type(exc).__name__}: {exc}"[:500],
@@ -491,7 +491,7 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
         }, ensure_ascii=False, indent=2), file=sys.stderr)
         return 2
     if args.enqueue:
-        ids = [str(doc["id"]) for doc in prepared]
+        ids = [str(doc["document_id"]) for doc in prepared]
         enqueued = 0
         for start in range(0, len(ids), 100):
             result = client.rpc("rag_worker_enqueue_jobs", {
@@ -516,7 +516,7 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
         claimed = client.rpc("rag_worker_claim_ingest_jobs", {
             "p_worker_id": worker_id,
             "p_limit": args.claim_batch,
-            "p_document_ids": [str(doc["id"]) for doc in prepared],
+            "p_document_ids": [str(doc["document_id"]) for doc in prepared],
         }) or []
         if not claimed:
             break
@@ -528,9 +528,9 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
             processed += 1
             if result["status"] == "error":
                 errors += 1
-                if not args.continue_on_error:
+                if not getattr(args, "continue_on_error", False):
                     break
-        if errors and not args.continue_on_error:
+        if errors and not getattr(args, "continue_on_error", False):
             break
     summary = {
         "selected_documents": len(selected),
@@ -539,7 +539,7 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
         "processed_jobs": processed,
         "errors": errors,
         "model": MODEL_ID,
-        "continue_on_error": args.continue_on_error,
+        "continue_on_error": getattr(args, "continue_on_error", False),
     }
     print(json.dumps(summary, ensure_ascii=False), flush=True)
     return 1 if errors or missing else 0
