@@ -66,7 +66,33 @@ The queue now has a dedicated ingest-only claim RPC and a partial unique index t
 
 Run the read-only SQL checks in [`supabase/verification/verify_ingestion_state.sql`](https://github.com/StrategyG/RAG_Cerdas/blob/codespaces-institutional-rag/supabase/verification/verify_ingestion_state.sql) and inspect the resulting document/chunk counts before processing another PDF. If a document fails, read its `ingest_error`; correct the source or token problem first. Retry only that document, with its actual current status.
 
-## 6. Evaluate only with reviewed labels
+## 6. Expand to the full corpus
+
+Do this only after the one-document pilot is successful and Codespaces Secrets are verified. First audit every recoverable document's source metadata without downloading PDFs or writing to Supabase:
+
+```bash
+python rag_pipeline.py ingest --status all --limit 0 --audit-sources
+```
+
+This checks all documents that are not already `indexed` or `skipped`, including the existing `discovered`, `processing`, and `failed` records. For Dropbox, the token needs both metadata-read permission (for `files/get_metadata`) and content-read permission (for `files/download`). Any missing path, size mismatch, inaccessible file, or invalid local PDF signature is reported. Fix source issues and rerun the audit until `sources_failed: 0`; do not proceed while the audit has failures unless you intentionally accept a partial corpus.
+
+Then start the complete recoverable-corpus run:
+
+```bash
+python rag_pipeline.py ingest --status all --limit 0 --continue-on-error
+```
+
+Safety/behavior:
+- `--limit 0` explicitly selects all eligible documents; the normal default remains one document.
+- `--status all` excludes `indexed` and `skipped` documents unless `--reprocess-indexed` is explicitly added. Do not add that flag for a normal first corpus run.
+- The worker verifies source metadata and expected file size before enqueueing; each actual download is checked again for PDF signature and file size.
+- Each document is page-split, written through the server-only RPC, embedded with the 384-dimensional multilingual E5 model, and only marked indexed when the database gate passes.
+- `--continue-on-error` allows the worker to continue through other selected documents if one fails. The final process exits nonzero when any document fails, and each failure is printed; fix source/OCR/permission issues and rerun only the failed set after reviewing current statuses.
+- This operation writes to Supabase and downloads the selected corpus from Dropbox. It can take a long time and consume Codespaces CPU, memory, network, and storage. Keep the Codespace running, do not close it while work is in progress, and do not start a second worker concurrently.
+
+After completion, run the read-only checks in `supabase/verification/verify_ingestion_state.sql`. Check that indexed documents have complete page mappings and embeddings. Scanned/image-only PDFs will fail text extraction and need an OCR stage; do not mark them indexed manually.
+
+## 7. Evaluate only with reviewed labels
 
 ```bash
 python eval_retrieval.py --cases eval_cases.json --k 5
@@ -74,7 +100,7 @@ python eval_retrieval.py --cases eval_cases.json --k 5
 
 The three pilot questions have expected evidence notes but no manually reviewed gold chunk IDs. The evaluator inspects keyword and semantic results, but it must withhold P@5, Recall@5, MRR@5, and nDCG@5 until a reviewer labels the new chunk IDs under `relevant_chunk_ids`. Citation accuracy requires checking page numbers against the original PDFs.
 
-## 7. What CI proves—and does not prove
+## 8. What CI proves—and does not prove
 
 GitHub Actions fails if required source/test files are absent. It compiles the worker and evaluator, runs regression tests, and validates evaluation cases. This is code validation only; it does not use production secrets, start a Codespace, download the embedding model, or execute real ingestion.
 
