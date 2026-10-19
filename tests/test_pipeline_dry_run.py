@@ -40,6 +40,9 @@ def args_for_dry_run():
         pdf_dir="data/pdfs",
         status="discovered",
         document_id=PILOT_ID,
+        audit_sources=False,
+        reprocess_indexed=False,
+        continue_on_error=False,
         limit=1,
         dry_run=True,
         enqueue=True,
@@ -58,6 +61,9 @@ def test_dry_run_checks_only_the_selected_source_and_performs_no_writes(monkeypa
 
         def local_path(self, doc):
             return "pilot.pdf"
+
+        def check_source(self, doc):
+            return {"ok": True, "source": "pilot.pdf", "bytes": 22}
 
         def get_bytes(self, doc):
             fetched.append(doc["document_id"])
@@ -85,6 +91,9 @@ def test_dry_run_blocks_when_source_download_fails(monkeypatch, capsys):
 
         def local_path(self, doc):
             return "pilot.pdf"
+
+        def check_source(self, doc):
+            return {"ok": True, "source": "pilot.pdf", "bytes": 22}
 
         def get_bytes(self, doc):
             raise RuntimeError("simulated Dropbox permission failure")
