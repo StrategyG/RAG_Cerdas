@@ -397,6 +397,12 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
     if args.status == "all" and not getattr(args, "reprocess_indexed", False):
         # "all" means all recoverable work, not reprocessing documents already indexed.
         all_docs = [doc for doc in all_docs if doc.get("ingest_status") not in {"indexed", "skipped"}]
+    if getattr(args, "pdf_only", False):
+        # This corpus also contains video lessons. Keep ebook ingestion scoped to PDFs.
+        all_docs = [
+            doc for doc in all_docs
+            if str(doc.get("source_name") or "").casefold().endswith(".pdf")
+        ]
     if args.document_id:
         all_docs = [doc for doc in all_docs if str(doc.get("document_id")) == args.document_id]
         if not all_docs:
@@ -507,7 +513,7 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
             "sample_source_failures": missing[:20],
         }, ensure_ascii=False))
     if args.enqueue_only:
-        return 2 if missing else 0
+        return 2 if missing and not getattr(args, "skip_unavailable_sources", False) else 0
 
     model = load_embedding_model()
     worker_id = f"codespaces-{os.getenv('CODESPACE_NAME', 'local')}"
@@ -544,7 +550,7 @@ def command_ingest(args: argparse.Namespace, client: RAGClient) -> int:
         "continue_on_error": getattr(args, "continue_on_error", False),
     }
     print(json.dumps(summary, ensure_ascii=False), flush=True)
-    return 1 if errors or missing else 0
+    return 1 if errors or (missing and not getattr(args, "skip_unavailable_sources", False)) else 0
 
 
 def main() -> int:
@@ -556,6 +562,8 @@ def main() -> int:
     ingest.add_argument("--status", default="discovered", choices=["all", "discovered", "queued", "processing", "indexed", "failed", "skipped"])
     ingest.add_argument("--document-id", default=None, help="Restrict this run to one exact document UUID (recommended for pilot validation)")
     ingest.add_argument("--audit-sources", action="store_true", help="Check source metadata/signature without downloading PDFs or writing to the database")
+    ingest.add_argument("--pdf-only", action="store_true", help="Restrict selection to documents whose source_name ends in .pdf; exclude videos and other formats")
+    ingest.add_argument("--skip-unavailable-sources", action="store_true", help="Skip and report source rows that fail source checks; use only after reviewing an audit report and confirming the failures are intentionally excluded")
     ingest.add_argument("--reprocess-indexed", action="store_true", help="Include indexed/skipped documents when --status all is selected")
     ingest.add_argument("--continue-on-error", action="store_true", help="Continue through the selected corpus after individual document failures")
     ingest.add_argument("--enqueue", action=argparse.BooleanOptionalAction, default=True,
