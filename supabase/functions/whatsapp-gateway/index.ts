@@ -1,5 +1,5 @@
 // WhatsApp Business webhook gateway (pilot).
-// Never logs message text or access tokens. Replies are sent only through the explicit /approve action.
+// Never logs message text or access tokens. Replies require explicit operator approval.
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://github.com",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-approval-secret, x-hub-signature-256",
@@ -32,7 +32,7 @@ async function verifyMetaSignature(rawBody: string, signature: string): Promise<
   return diff === 0;
 }
 
-async function dbRequest(path: string, method: string, body?: unknown) {
+async function dbRequest(path: string, method: string, body?: unknown, prefer = "return=representation") {
   const url = env("SUPABASE_URL");
   const key = env("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !key) throw new Error("Server database configuration is incomplete");
@@ -42,7 +42,7 @@ async function dbRequest(path: string, method: string, body?: unknown) {
       apikey: key,
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
-      Prefer: "return=representation",
+      Prefer: prefer,
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
@@ -59,6 +59,7 @@ async function handleWebhook(req: Request): Promise<Response> {
     }
     return json({ error: "Webhook verification failed" }, 403);
   }
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   const rawBody = await req.text();
   const signature = req.headers.get("x-hub-signature-256") ?? "";
@@ -73,7 +74,6 @@ async function handleWebhook(req: Request): Promise<Response> {
     return json({ error: "Invalid JSON" }, 400);
   }
 
-  // Meta expects a fast 200 response. Persist only individual inbound text messages.
   const rows: Record<string, unknown>[] = [];
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
@@ -82,30 +82,32 @@ async function handleWebhook(req: Request): Promise<Response> {
       const phoneNumberId = value.metadata?.phone_number_id ?? null;
       for (const message of value.messages ?? []) {
         if (message.type !== "text" || !message.id || !message.from) continue;
+        const timestamp = Number(message.timestamp);
         rows.push({
           provider: "whatsapp",
-          provider_message_id: message.id,
-          sender_wa_id: message.from,
+          provider_message_id: String(message.id),
+          sender_wa_id: String(message.from),
           phone_number_id: phoneNumberId,
           message_text: String(message.text?.body ?? "").slice(0, 10000),
           status: "needs_review",
-          received_at: new Date(Number(message.timestamp ?? 0) * 1000).toISOString(),
+          received_at: Number.isFinite(timestamp) && timestamp > 0
+            ? new Date(timestamp * 1000).toISOString()
+            : new Date().toISOString(),
           metadata: { message_type: message.type },
         });
       }
     }
   }
 
-  for (const row of rows) {
+  // PostgREST upsert makes webhook retries idempotent for provider_message_id.
+  if (rows.length) {
     const response = await dbRequest(
       "whatsapp_inbox?on_conflict=provider_message_id",
       "POST",
-      row,
+      rows,
+      "resolution=ignore-duplicates,return=minimal",
     );
-    if (!response.ok && response.status !== 409) {
-      // Avoid leaking response bodies or customer content to logs.
-      return json({ error: "Could not persist inbound event" }, 500);
-    }
+    if (!response.ok) return json({ error: "Could not persist inbound event" }, 500);
   }
   return json({ received: true, stored: rows.length });
 }
@@ -130,37 +132,52 @@ async function approveAndSend(req: Request): Promise<Response> {
     return json({ error: "message_id and approved_reply (1-4096 chars) are required" }, 400);
   }
 
+  // Atomically claim only a message that has not already been claimed or sent.
   const lookup = await dbRequest(
-    `whatsapp_inbox?provider_message_id=eq.${encodeURIComponent(messageId)}&select=provider_message_id,sender_wa_id,phone_number_id,status`,
-    "GET",
+    `whatsapp_inbox?provider_message_id=eq.${encodeURIComponent(messageId)}&status=in.(needs_review,draft_ready)&select=provider_message_id,sender_wa_id,phone_number_id,status`,
+    "PATCH",
+    { status: "sending" },
+    "return=representation",
   );
-  if (!lookup.ok) return json({ error: "Could not load inbox record" }, 500);
+  if (!lookup.ok) return json({ error: "Could not claim inbox record" }, 500);
   const records = await lookup.json();
   const record = records?.[0];
-  if (!record) return json({ error: "Message not found" }, 404);
-  if (record.status === "sent") return json({ error: "Message already replied to" }, 409);
+  if (!record) return json({ error: "Message not found, already claimed, or already replied to" }, 409);
 
   const token = env("WHATSAPP_ACCESS_TOKEN");
   const phoneId = String(record.phone_number_id || env("WHATSAPP_PHONE_NUMBER_ID"));
   const graphVersion = env("META_GRAPH_API_VERSION") || "v23.0";
-  if (!token || !phoneId || !record.sender_wa_id) return json({ error: "WhatsApp sending configuration is incomplete" }, 503);
+  if (!token || !phoneId || !record.sender_wa_id) {
+    await dbRequest(`whatsapp_inbox?provider_message_id=eq.${encodeURIComponent(messageId)}&status=eq.sending`, "PATCH", { status: "failed" });
+    return json({ error: "WhatsApp sending configuration is incomplete" }, 503);
+  }
 
-  const sendResponse = await fetch(`https://graph.facebook.com/${graphVersion}/${phoneId}/messages`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: record.sender_wa_id,
-      type: "text",
-      text: { preview_url: false, body: reply },
-    }),
-  });
-  const sendResult = await sendResponse.json().catch(() => ({}));
-  if (!sendResponse.ok) return json({ error: "WhatsApp API rejected the approved reply" }, 502);
+  let sendResponse: Response;
+  let sendResult: any;
+  try {
+    sendResponse = await fetch(`https://graph.facebook.com/${graphVersion}/${phoneId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: record.sender_wa_id,
+        type: "text",
+        text: { preview_url: false, body: reply },
+      }),
+    });
+    sendResult = await sendResponse.json().catch(() => ({}));
+  } catch {
+    await dbRequest(`whatsapp_inbox?provider_message_id=eq.${encodeURIComponent(messageId)}&status=eq.sending`, "PATCH", { status: "failed" });
+    return json({ error: "WhatsApp API request failed; verify delivery status before retrying" }, 502);
+  }
+  if (!sendResponse.ok) {
+    await dbRequest(`whatsapp_inbox?provider_message_id=eq.${encodeURIComponent(messageId)}&status=eq.sending`, "PATCH", { status: "failed" });
+    return json({ error: "WhatsApp API rejected the approved reply" }, 502);
+  }
 
   const update = await dbRequest(
-    `whatsapp_inbox?provider_message_id=eq.${encodeURIComponent(messageId)}`,
+    `whatsapp_inbox?provider_message_id=eq.${encodeURIComponent(messageId)}&status=eq.sending`,
     "PATCH",
     { status: "sent", approved_reply: reply, sent_at: new Date().toISOString(), outbound_message_id: sendResult.messages?.[0]?.id ?? null },
   );
