@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = ROOT / "rag_pipeline.py"
-MIGRATION = ROOT / "supabase" / "migrations" / "20261020080000_append_only_ingestion_generations.sql"
+MIGRATION = ROOT / "supabase" / "migrations" / "20261020055818_append_only_ingestion_generations.sql"
 
 
 def test_worker_uses_versioned_stage_rpc_and_records_pdf_hash():
