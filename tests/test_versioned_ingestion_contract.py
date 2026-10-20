@@ -13,7 +13,8 @@ MIGRATION = ROOT / "supabase" / "migrations" / "20261020055818_append_only_inges
 def test_worker_uses_versioned_stage_rpc_and_records_pdf_hash():
     worker = PIPELINE.read_text(encoding="utf-8")
     assert 'client.rpc("rag_worker_stage_document_generation"' in worker
-    assert '"p_document_sha256": hashlib.sha256(pdf_bytes).hexdigest()' in worker
+    assert "document_sha256 = hashlib.sha256(pdf_bytes).hexdigest()" in worker
+    assert '"p_document_sha256": document_sha256' in worker
     assert 'client.rpc("rag_worker_replace_document_chunks"' not in worker
     assert 'activated_documents += int(result.get("activated_documents", 0))' in worker
     assert 'page_aware.get("active_generation") != generation_id' in worker
