@@ -79,21 +79,21 @@ This checks all documents that are not already `indexed` or `skipped`, including
 For the current Dropbox inventory, audit only the ebook PDFs first. This excludes the 23 MP4 lessons from this pipeline:
 
 ```bash
-python rag_pipeline.py ingest --status all --limit 0 --pdf-only --audit-sources
+python rag_pipeline.py ingest --status all --limit 0 --pdf-only --exclude-document-id 660d1f25-b11a-4403-b243-f7962ab00700 --audit-sources
 ```
 
-At the current snapshot, Dropbox has 359 unique PDF content hashes across 360 PDF paths: `Lesson 4 How emotions can affect your trading results.pdf` exists both at the root and under `/Institutional_RAG/01_RAW_SOURCES/`, but the two files have the same Dropbox content hash, so it is one ebook. Supabase has 360 PDF catalog rows, including one stale row for `/akses 1000+.pdf` that is not present in Dropbox. The expected audit is therefore about 359 valid source rows and exactly that one stale row failing. If any other PDF fails, stop and investigate its path, permissions, or size before ingestion.
+At the current snapshot, Dropbox has 360 PDF paths but 359 unique PDF content hashes. `Lesson 4 How emotions can affect your trading results.pdf` exists both at the root and under `/Institutional_RAG/01_RAW_SOURCES/`; both paths return the same Dropbox content hash, so the nested copy is an exact duplicate. Supabase has 360 PDF catalog rows, including one stale row for `/akses 1000+.pdf` that is not present in Dropbox. The command explicitly excludes only that stale document UUID (`660d1f25-b11a-4403-b243-f7962ab00700`). The expected audit is therefore 359 selected PDF rows and zero source failures. If any source fails, stop and investigate its path, permissions, or size before ingestion.
 
 After the audit matches that expected pattern, start the recoverable PDF corpus run:
 
 ```bash
-python rag_pipeline.py ingest --status all --limit 0 --pdf-only --skip-unavailable-sources --continue-on-error
+python rag_pipeline.py ingest --status all --limit 0 --pdf-only --exclude-document-id 660d1f25-b11a-4403-b243-f7962ab00700 --continue-on-error
 ```
 
 Safety/behavior:
 - `--limit 0` explicitly selects all eligible documents; the normal default remains one document.
 - `--pdf-only` excludes videos and other formats from ebook ingestion.
-- `--skip-unavailable-sources` skips and reports records whose Dropbox source check fails. Use it for this corpus only after the audit confirms that the sole failure is the known stale `/akses 1000+.pdf` database row; do not use it to conceal additional source or permission failures.
+- `--exclude-document-id` is an explicit exclusion for the known stale `/akses 1000+.pdf` row only. Unexpected source failures remain errors; do not add other document IDs to the exclusion list without reviewing them.
 - `--status all` excludes `indexed` and `skipped` documents unless `--reprocess-indexed` is explicitly added. Do not add that flag for a normal recovery run.
 - The worker verifies source metadata and expected file size before enqueueing; each actual download is checked again for PDF signature and file size.
 - Each document is split within original PDF pages, written through the server-only RPC, embedded with the 384-dimensional multilingual E5 model, and marked indexed only after the database gate passes.
