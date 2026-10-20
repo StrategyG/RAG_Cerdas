@@ -54,13 +54,12 @@ If the document status has changed from `discovered`, choose the matching status
 
 ## 5. Run one-document ingestion
 
-Before any write, apply the append-only generation migration
+Before any write, verify the append-only generation migration
 [`20261020055818_append_only_ingestion_generations.sql`](https://github.com/StrategyG/RAG_Cerdas/blob/codespaces-institutional-rag/supabase/migrations/20261020055818_append_only_ingestion_generations.sql)
-to the intended Supabase project and verify that
-`public.rag_worker_stage_document_generation(uuid,integer,jsonb,text)` exists and
-`public.rag_worker_replace_document_chunks(uuid,integer,jsonb)` no longer exists.
-The migration preserves existing chunks and retires the previous destructive RPC.
-Do not run ingestion if this migration has not been applied and verified.
+is applied. For the configured project `uktauwysjkseqrnbjwzy`, this migration is already recorded as version `20261020055818` and the live RPC checks have passed. Verify that
+`public.rag_worker_stage_document_generation(uuid,integer,jsonb,text)` exists,
+`public.rag_worker_replace_document_chunks(uuid,integer,jsonb)` no longer exists,
+and the staging RPC is executable by `service_role` only. For any other Supabase project, apply the migration through the repository's normal migration process before ingestion. Do not run ingestion if these checks fail.
 
 Only after the dry-run, preflight, and migration checks pass:
 
