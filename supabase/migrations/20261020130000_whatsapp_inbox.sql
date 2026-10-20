@@ -8,7 +8,7 @@ create table if not exists public.whatsapp_inbox (
   phone_number_id text,
   message_text text not null default '',
   status text not null default 'needs_review'
-    check (status in ('needs_review', 'draft_ready', 'sent', 'failed')),
+    check (status in ('needs_review', 'draft_ready', 'sending', 'sent', 'failed')),
   approved_reply text,
   outbound_message_id text,
   received_at timestamptz not null default now(),
