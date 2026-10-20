@@ -141,3 +141,74 @@ def test_source_audit_is_read_only_and_reports_coverage(monkeypatch, capsys):
     assert report["database_writes"] is False
     assert report["pdf_downloads"] is False
     assert client.rpc_calls == []
+
+
+
+def test_pdf_only_audit_excludes_video_entries_and_remains_read_only(monkeypatch, capsys):
+    class CorpusClient:
+        def list_documents(self, status):
+            assert status == "all"
+            return [
+                {
+                    "document_id": PILOT_ID,
+                    "source_path": "/book.pdf",
+                    "source_name": "book.pdf",
+                    "ingest_status": "discovered",
+                },
+                {
+                    "document_id": "22222222-2222-2222-2222-222222222222",
+                    "source_path": "/video.mp4",
+                    "source_name": "video.mp4",
+                    "ingest_status": "discovered",
+                },
+                {
+                    "document_id": "33333333-3333-3333-3333-333333333333",
+                    "source_path": "/stale.pdf",
+                    "source_name": "stale.pdf",
+                    "ingest_status": "failed",
+                },
+            ]
+
+        def rpc(self, name, body, timeout=120):
+            raise AssertionError("source audit must not call write or queue RPCs")
+
+    class FakeSource:
+        def __init__(self, pdf_dir, dropbox_token):
+            pass
+
+        def check_source(self, doc):
+            ok = doc["source_name"] == "book.pdf"
+            return {
+                "ok": ok,
+                "source": doc["source_path"],
+                "reason": None if ok else "not_found",
+            }
+
+    monkeypatch.setattr(rag_pipeline, "PDFSource", FakeSource)
+    args = Namespace(
+        pdf_dir="data/pdfs",
+        status="all",
+        document_id=None,
+        audit_sources=True,
+        reprocess_indexed=False,
+        continue_on_error=True,
+        limit=0,
+        dry_run=False,
+        enqueue=True,
+        enqueue_only=False,
+        claim_batch=5,
+        embed_batch_size=24,
+        pdf_only=True,
+        skip_unavailable_sources=True,
+    )
+
+    rc = rag_pipeline.command_ingest(args, CorpusClient())
+    report = json.loads(capsys.readouterr().out)
+
+    assert rc == 2  # Audit stays strict; skipping is only for the reviewed ingestion run.
+    assert report["documents_selected"] == 2
+    assert report["sources_ok"] == 1
+    assert report["sources_failed"] == 1
+    assert {item["source_name"] for item in report["results"]} == {"book.pdf", "stale.pdf"}
+    assert report["database_writes"] is False
+    assert report["pdf_downloads"] is False
