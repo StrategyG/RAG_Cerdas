@@ -342,10 +342,11 @@ def process_job(client: RAGClient, source: PDFSource, model: Any, job: dict[str,
         pdf_bytes = source.get_bytes(doc)
         tokenizer = model.tokenizer
         page_count, chunks, extraction_stats = extract_page_chunks(pdf_bytes, tokenizer)
-        client.rpc("rag_worker_replace_document_chunks", {
+        client.rpc("rag_worker_stage_document_generation", {
             "p_document_id": document_id,
             "p_page_count": page_count,
             "p_chunks": chunks,
+            "p_document_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
         })
         embedding_stats = embed_document(client, model, document_id, embed_batch_size)
         result = {**extraction_stats, **embedding_stats, "document_id": document_id, "status": "indexed"}
