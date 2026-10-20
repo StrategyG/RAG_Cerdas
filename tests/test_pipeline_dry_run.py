@@ -144,7 +144,7 @@ def test_source_audit_is_read_only_and_reports_coverage(monkeypatch, capsys):
 
 
 
-def test_pdf_only_audit_excludes_video_entries_and_remains_read_only(monkeypatch, capsys):
+def test_pdf_only_audit_excludes_video_and_reviewed_stale_id(monkeypatch, capsys):
     class CorpusClient:
         def list_documents(self, status):
             assert status == "all"
@@ -199,16 +199,16 @@ def test_pdf_only_audit_excludes_video_entries_and_remains_read_only(monkeypatch
         claim_batch=5,
         embed_batch_size=24,
         pdf_only=True,
-        skip_unavailable_sources=True,
+        exclude_document_id=["33333333-3333-3333-3333-333333333333"],
     )
 
     rc = rag_pipeline.command_ingest(args, CorpusClient())
     report = json.loads(capsys.readouterr().out)
 
-    assert rc == 2  # Audit stays strict; skipping is only for the reviewed ingestion run.
-    assert report["documents_selected"] == 2
+    assert rc == 0
+    assert report["documents_selected"] == 1
     assert report["sources_ok"] == 1
-    assert report["sources_failed"] == 1
-    assert {item["source_name"] for item in report["results"]} == {"book.pdf", "stale.pdf"}
+    assert report["sources_failed"] == 0
+    assert {item["source_name"] for item in report["results"]} == {"book.pdf"}
     assert report["database_writes"] is False
     assert report["pdf_downloads"] is False
