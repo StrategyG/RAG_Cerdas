@@ -307,6 +307,7 @@ def embed_document(client: RAGClient, model: Any, document_id: str, batch_size: 
     if not chunks:
         raise RuntimeError("No unembedded chunks were returned after page-aware extraction")
     updated = 0
+    activated_documents = 0
     for start in range(0, len(chunks), batch_size):
         batch = chunks[start:start + batch_size]
         vectors = encode_passages(model, [c["text_content"] for c in batch], batch_size=batch_size)
@@ -322,13 +323,23 @@ def embed_document(client: RAGClient, model: Any, document_id: str, batch_size: 
         if isinstance(result, dict):
             stored = int(result.get("stored", 0))
             updated += stored
+            activated_documents += int(result.get("activated_documents", 0))
             if stored != len(batch):
                 raise RuntimeError(
                     f"Embedding batch stored {stored}/{len(batch)} rows; stale hash or page mapping mismatch."
                 )
         else:
             raise RuntimeError(f"Unexpected embedding-store result: {result!r}")
-    return {"chunks_seen": len(chunks), "embeddings_stored": updated}
+    if activated_documents != 1:
+        raise RuntimeError(
+            "Embeddings were written, but the database did not activate exactly one complete "
+            f"page-aware generation for document {document_id} (activated_documents={activated_documents})."
+        )
+    return {
+        "chunks_seen": len(chunks),
+        "embeddings_stored": updated,
+        "activated_documents": activated_documents,
+    }
 
 
 def process_job(client: RAGClient, source: PDFSource, model: Any, job: dict[str, Any], embed_batch_size: int) -> dict[str, Any]:
@@ -342,14 +353,40 @@ def process_job(client: RAGClient, source: PDFSource, model: Any, job: dict[str,
         pdf_bytes = source.get_bytes(doc)
         tokenizer = model.tokenizer
         page_count, chunks, extraction_stats = extract_page_chunks(pdf_bytes, tokenizer)
-        client.rpc("rag_worker_stage_document_generation", {
+        document_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+        stage_result = client.rpc("rag_worker_stage_document_generation", {
             "p_document_id": document_id,
             "p_page_count": page_count,
             "p_chunks": chunks,
-            "p_document_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
+            "p_document_sha256": document_sha256,
         })
+        if not isinstance(stage_result, dict) or not stage_result.get("generation"):
+            raise RuntimeError(f"Unexpected generation-stage result: {stage_result!r}")
+        generation_id = str(stage_result["generation"])
         embedding_stats = embed_document(client, model, document_id, embed_batch_size)
-        result = {**extraction_stats, **embedding_stats, "document_id": document_id, "status": "indexed"}
+        # Never mark a job successful only because embedding writes returned without an HTTP error:
+        # verify the active generation and whole-file digest from the database itself.
+        indexed_doc = client.get_document(document_id)
+        indexed_metadata = indexed_doc.get("metadata") or {}
+        page_aware = indexed_metadata.get("page_aware_ingest") or {}
+        if (
+            indexed_doc.get("ingest_status") != "indexed"
+            or page_aware.get("active_generation") != generation_id
+            or indexed_doc.get("content_sha256") != document_sha256
+            or indexed_doc.get("page_count") != page_count
+        ):
+            raise RuntimeError(
+                "Database completion gate failed: the staged generation, source SHA-256, "
+                "page count, and indexed status do not all match."
+            )
+        result = {
+            **extraction_stats,
+            **embedding_stats,
+            "document_id": document_id,
+            "generation": generation_id,
+            "document_sha256": document_sha256,
+            "status": "indexed",
+        }
         client.rpc("rag_worker_finish_job", {
             "p_job_id": job_id,
             "p_worker_id": worker_id,
