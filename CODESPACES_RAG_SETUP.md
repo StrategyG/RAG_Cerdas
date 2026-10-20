@@ -55,7 +55,7 @@ If the document status has changed from `discovered`, choose the matching status
 ## 5. Run one-document ingestion
 
 Before any write, apply the append-only generation migration
-[`20261020080000_append_only_ingestion_generations.sql`](https://github.com/StrategyG/RAG_Cerdas/blob/codespaces-institutional-rag/supabase/migrations/20261020080000_append_only_ingestion_generations.sql)
+[`20261020055818_append_only_ingestion_generations.sql`](https://github.com/StrategyG/RAG_Cerdas/blob/codespaces-institutional-rag/supabase/migrations/20261020055818_append_only_ingestion_generations.sql)
 to the intended Supabase project and verify that
 `public.rag_worker_stage_document_generation(uuid,integer,jsonb,text)` exists and
 `public.rag_worker_replace_document_chunks(uuid,integer,jsonb)` no longer exists.
