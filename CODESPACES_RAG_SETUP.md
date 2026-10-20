@@ -54,13 +54,21 @@ If the document status has changed from `discovered`, choose the matching status
 
 ## 5. Run one-document ingestion
 
-Only after the dry-run and preflight pass:
+Before any write, apply the append-only generation migration
+[`20261020080000_append_only_ingestion_generations.sql`](https://github.com/StrategyG/RAG_Cerdas/blob/codespaces-institutional-rag/supabase/migrations/20261020080000_append_only_ingestion_generations.sql)
+to the intended Supabase project and verify that
+`public.rag_worker_stage_document_generation(uuid,integer,jsonb,text)` exists and
+`public.rag_worker_replace_document_chunks(uuid,integer,jsonb)` no longer exists.
+The migration preserves existing chunks and retires the previous destructive RPC.
+Do not run ingestion if this migration has not been applied and verified.
+
+Only after the dry-run, preflight, and migration checks pass:
 
 ```bash
 python rag_pipeline.py ingest --document-id 041f30c6-5957-49c0-a29b-e3c29a4e1ab0 --status discovered --limit 1
 ```
 
-The worker splits extracted text within individual PDF pages, writes page-numbered chunks, generates normalized 384-dimensional `intfloat/multilingual-e5-small` embeddings, and updates the indexed state only when all chunks have embeddings and page mappings. The database RPC will reject stale content hashes or unmapped chunks.
+The worker splits extracted text within individual PDF pages, stages a new page-aware chunk generation without deleting existing chunk rows, generates normalized 384-dimensional `intfloat/multilingual-e5-small` embeddings, and activates that generation only when every chunk in it has an embedding and a valid one-page citation. It records the SHA-256 of the original PDF on successful activation. Retrieval keeps using the prior active/legacy generation while a new generation is pending, then switches to the new generation after the completion gate passes. Old chunk rows remain stored; they are not deleted by this migration.
 
 The queue now has a dedicated ingest-only claim RPC and a partial unique index to avoid more than one active ingest job per document/type. The worker scopes claims to the selected document UUIDs; it will not accidentally claim other job types or unrelated documents. CPU embedding may be slow on first run because model weights must be downloaded.
 
@@ -76,7 +84,7 @@ python rag_pipeline.py ingest --status all --limit 0 --audit-sources
 
 This checks all documents that are not already `indexed` or `skipped`, including the existing `discovered`, `processing`, and `failed` records. For Dropbox, the token needs both metadata-read permission (for `files/get_metadata`) and content-read permission (for `files/download`). Any missing path, size mismatch, inaccessible file, or invalid local PDF signature is reported. Fix source issues and rerun the audit until `sources_failed: 0`; do not proceed while the audit has failures unless you intentionally accept a partial corpus.
 
-For the current Dropbox inventory, audit only the ebook PDFs first. This excludes the 23 MP4 lessons from this pipeline:
+For the current Dropbox inventory, audit only the ebook PDFs first. This excludes the 23 MP4 lessons from this pipeline. Ensure the append-only migration above is applied and verified before running the write command below:
 
 ```bash
 python rag_pipeline.py ingest --status all --limit 0 --pdf-only --exclude-document-id 660d1f25-b11a-4403-b243-f7962ab00700 --audit-sources
@@ -92,6 +100,9 @@ python rag_pipeline.py ingest --status all --limit 0 --pdf-only --exclude-docume
 
 Safety/behavior:
 - `--limit 0` explicitly selects all eligible documents; the normal default remains one document.
+- The append-only migration must be applied before ingestion. It retires the old chunk-replacement RPC that deleted existing `rag.chunks` rows.
+- New generations are appended with `ingest_generation` metadata. The previous active generation remains available until the pending generation has fully embedded; retrieval switches to the new active generation only after that gate passes.
+- All prior and superseded chunk rows remain in the database. This preserves history but increases database storage; review storage capacity as the corpus grows.
 - `--pdf-only` excludes videos and other formats from ebook ingestion.
 - `--exclude-document-id` is an explicit exclusion for the known stale `/akses 1000+.pdf` row only. Unexpected source failures remain errors; do not add other document IDs to the exclusion list without reviewing them.
 - `--status all` excludes `indexed` and `skipped` documents unless `--reprocess-indexed` is explicitly added. Do not add that flag for a normal recovery run.
