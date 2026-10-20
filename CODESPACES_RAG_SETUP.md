@@ -76,19 +76,29 @@ python rag_pipeline.py ingest --status all --limit 0 --audit-sources
 
 This checks all documents that are not already `indexed` or `skipped`, including the existing `discovered`, `processing`, and `failed` records. For Dropbox, the token needs both metadata-read permission (for `files/get_metadata`) and content-read permission (for `files/download`). Any missing path, size mismatch, inaccessible file, or invalid local PDF signature is reported. Fix source issues and rerun the audit until `sources_failed: 0`; do not proceed while the audit has failures unless you intentionally accept a partial corpus.
 
-Then start the complete recoverable-corpus run:
+For the current Dropbox inventory, audit only the ebook PDFs first. This excludes the 23 MP4 lessons from this pipeline:
 
 ```bash
-python rag_pipeline.py ingest --status all --limit 0 --continue-on-error
+python rag_pipeline.py ingest --status all --limit 0 --pdf-only --audit-sources
+```
+
+At the current snapshot, Dropbox has 359 unique PDF content hashes across 360 PDF paths: `Lesson 4 How emotions can affect your trading results.pdf` exists both at the root and under `/Institutional_RAG/01_RAW_SOURCES/`, but the two files have the same Dropbox content hash, so it is one ebook. Supabase has 360 PDF catalog rows, including one stale row for `/akses 1000+.pdf` that is not present in Dropbox. The expected audit is therefore about 359 valid source rows and exactly that one stale row failing. If any other PDF fails, stop and investigate its path, permissions, or size before ingestion.
+
+After the audit matches that expected pattern, start the recoverable PDF corpus run:
+
+```bash
+python rag_pipeline.py ingest --status all --limit 0 --pdf-only --skip-unavailable-sources --continue-on-error
 ```
 
 Safety/behavior:
 - `--limit 0` explicitly selects all eligible documents; the normal default remains one document.
-- `--status all` excludes `indexed` and `skipped` documents unless `--reprocess-indexed` is explicitly added. Do not add that flag for a normal first corpus run.
+- `--pdf-only` excludes videos and other formats from ebook ingestion.
+- `--skip-unavailable-sources` skips and reports records whose Dropbox source check fails. Use it for this corpus only after the audit confirms that the sole failure is the known stale `/akses 1000+.pdf` database row; do not use it to conceal additional source or permission failures.
+- `--status all` excludes `indexed` and `skipped` documents unless `--reprocess-indexed` is explicitly added. Do not add that flag for a normal recovery run.
 - The worker verifies source metadata and expected file size before enqueueing; each actual download is checked again for PDF signature and file size.
-- Each document is page-split, written through the server-only RPC, embedded with the 384-dimensional multilingual E5 model, and only marked indexed when the database gate passes.
-- `--continue-on-error` allows the worker to continue through other selected documents if one fails. The final process exits nonzero when any document fails, and each failure is printed; fix source/OCR/permission issues and rerun only the failed set after reviewing current statuses.
-- This operation writes to Supabase and downloads the selected corpus from Dropbox. It can take a long time and consume Codespaces CPU, memory, network, and storage. Keep the Codespace running, do not close it while work is in progress, and do not start a second worker concurrently.
+- Each document is split within original PDF pages, written through the server-only RPC, embedded with the 384-dimensional multilingual E5 model, and marked indexed only after the database gate passes.
+- `--continue-on-error` lets the worker continue after an individual PDF fails. Check each per-document result and rerun failed PDFs after reviewing their current status.
+- The run downloads PDFs from Dropbox and writes chunks and embeddings to Supabase. Keep one Codespace worker running at a time; do not close the Codespace during processing.
 
 After completion, run the read-only checks in `supabase/verification/verify_ingestion_state.sql`. Check that indexed documents have complete page mappings and embeddings. Scanned/image-only PDFs will fail text extraction and need an OCR stage; do not mark them indexed manually.
 
