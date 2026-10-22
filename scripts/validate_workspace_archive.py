@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import tarfile
+import tempfile
 from pathlib import Path, PurePosixPath
 
 
@@ -77,34 +79,44 @@ def extract_archive(archive: Path, destination: Path) -> tuple[int, int]:
     if destination.exists():
         raise FileExistsError("destination already exists; refusing to overwrite it")
 
-    # Validate every entry before creating the output directory.
+    # Validate every entry before creating a staging directory.
     with tarfile.open(archive, mode="r:gz") as tar:
-        root = destination.resolve()
-        members, total_size = validate_members(tar.getmembers(), root)
-        destination.mkdir(parents=True, exist_ok=False)
-        for member, _path, target in members:
-            if member.isdir():
-                target.mkdir(parents=True, exist_ok=True)
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            source = tar.extractfile(member)
-            if source is None:
-                raise ValueError(f"could not read archive member: {member.name!r}")
-            with source, target.open("xb") as output:
-                while True:
-                    block = source.read(1024 * 1024)
-                    if not block:
-                        break
-                    output.write(block)
+        members, total_size = validate_members(tar.getmembers(), destination.resolve())
+        staging = Path(tempfile.mkdtemp(prefix=f".{destination.name}.tmp-", dir=destination.parent))
+        try:
+            root = staging.resolve()
+            for member, path, _target in members:
+                target = (root / Path(*path.parts)).resolve()
+                try:
+                    target.relative_to(root)
+                except ValueError as exc:
+                    raise ValueError(f"archive path escapes staging directory: {member.name!r}") from exc
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = tar.extractfile(member)
+                if source is None:
+                    raise ValueError(f"could not read archive member: {member.name!r}")
+                with source, target.open("xb") as output:
+                    while True:
+                        block = source.read(1024 * 1024)
+                        if not block:
+                            break
+                        output.write(block)
 
-    files = sorted(
-        p.relative_to(destination).as_posix()
-        for p in destination.rglob("*")
-        if p.is_file()
-    )
-    manifest = destination / "workspace_manifest.txt"
-    manifest.write_text("\n".join(files) + ("\n" if files else ""), encoding="utf-8")
-    return len(files), total_size
+            files = sorted(
+                p.relative_to(root).as_posix()
+                for p in root.rglob("*")
+                if p.is_file()
+            )
+            manifest = root / "workspace_manifest.txt"
+            manifest.write_text("\n".join(files) + ("\n" if files else ""), encoding="utf-8")
+            staging.rename(destination)
+            return len(files), total_size
+        except Exception:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
 
 
 def main() -> int:
