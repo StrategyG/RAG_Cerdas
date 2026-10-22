@@ -50,7 +50,7 @@ jobs:
                   if (
                       not raw_name
                       or path.is_absolute()
-              or chr(92) in raw_name
+                      or chr(92) in raw_name
                       or ".." in path.parts
                       or not path.parts
                   ):
