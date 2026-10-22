@@ -129,3 +129,14 @@ No GitHub Actions run was manually dispatched. No tests were executed in the rep
 After adding the archive validator, fixture tests, workflow refactor, and readiness documentation, a fresh GitHub compare reports **99 commits ahead, 0 behind** `main`. The earlier 94-commit count in section 9 was accurate at that earlier checkpoint and is superseded by this comparison.
 
 A combined commit-status query for checkpoint commit `1483f826b54729266a4d019c188bf01081ecc922` returned no registered status checks. This means CI is **NOT VERIFIED** from that response; it does not mean the tests passed. The exact latest head may advance again as this report is updated, so re-check status in GitHub before treating it as current.
+
+
+## 11. Archive extraction reliability follow-up
+
+The archive validator now extracts into a temporary sibling staging directory, promotes it to the requested destination only after extraction and manifest generation succeed, and removes the staging directory after an extraction error. The fixture suite now also covers cleanup after a simulated extraction failure.
+
+- Validator change commit: `a5c38dec1daf709231c137b276c0d42e4f47614e`
+- Failure-cleanup test commit: `e8e27bcf62f9af30b18da9d90e957104a1addeb8`
+- Current comparison immediately before this report update: **103 commits ahead, 0 behind** `main`.
+- Combined commit-status query for `e8e27bcf62f9af30b18da9d90e957104a1addeb8`: no status checks returned.
+- Archive tests: added, **NOT RUN** in the repository runner. The source/workflow has not been executed in GitHub Actions.
