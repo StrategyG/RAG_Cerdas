@@ -122,3 +122,10 @@ No GitHub Actions run was manually dispatched. No tests were executed in the rep
 - Run the archive validator fixture tests and review any failures before relying on the workflow.
 - Verify live connectivity and schema only through authorized read-only checks.
 - Keep retrieval metrics marked `NOT MEASURED` until human-reviewed relevance labels exist.
+
+
+## 10. Latest repository comparison
+
+After adding the archive validator, fixture tests, workflow refactor, and readiness documentation, a fresh GitHub compare reports **99 commits ahead, 0 behind** `main`. The earlier 94-commit count in section 9 was accurate at that earlier checkpoint and is superseded by this comparison.
+
+A combined commit-status query for checkpoint commit `1483f826b54729266a4d019c188bf01081ecc922` returned no registered status checks. This means CI is **NOT VERIFIED** from that response; it does not mean the tests passed. The exact latest head may advance again as this report is updated, so re-check status in GitHub before treating it as current.
