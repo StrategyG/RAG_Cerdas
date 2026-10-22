@@ -13,7 +13,7 @@ This assessment is based on GitHub repository source and branch comparison. It i
 ## Current branch state
 
 - `main` head at the compared base: `0d3b65e21f82d35ca5313418fed86b248f61fe3f`.
-- The development branch is **94 commits ahead, 0 behind** `main`.
+- The development branch is **99 commits ahead, 0 behind** `main`.
 - Do not merge the branch as a whole. It contains RAG pipeline work, migrations, workflows, tests, and a WhatsApp gateway; review and stage the diff by feature and risk.
 - No changes to `main`, live database writes, migrations, mass ingestion, deployment, or Dropbox source mutation were performed during this assessment.
 
@@ -36,7 +36,7 @@ This assessment is based on GitHub repository source and branch comparison. It i
 4. `tests/test_workspace_archive_validator.py` adds fixtures for valid extraction, traversal, absolute paths, backslashes, symlinks, duplicate paths, file/directory conflicts, and existing destinations.
 5. `.github/workflows/extract-workspace.yml` calls the validator module instead of embedding archive extraction logic inline.
 
-These are source inspection findings. The changes are **implemented but not yet test-verified** in a repository runner.
+These are source inspection findings. The changes are **implemented but not yet test-verified** in a repository runner. The current commit status query returned no registered status checks for the latest repair checkpoint; this is not evidence that tests passed.
 
 ## Test and integration status
 
