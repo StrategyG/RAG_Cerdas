@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 
 MAX_MEMBERS = 25_000
 MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
+RESERVED_MEMBER_NAMES = {"workspace_manifest.txt"}
 
 
 def validate_members(members, root: Path, *, max_members=MAX_MEMBERS,
@@ -27,6 +28,8 @@ def validate_members(members, root: Path, *, max_members=MAX_MEMBERS,
     for member in members:
         raw_name = member.name
         path = PurePosixPath(raw_name)
+        normalized = path.as_posix().rstrip("/")
+        basename = PurePosixPath(normalized).name if normalized else ""
         if (
             not raw_name
             or path.is_absolute()
@@ -35,12 +38,12 @@ def validate_members(members, root: Path, *, max_members=MAX_MEMBERS,
             or ".." in path.parts
             or not path.parts
             or ":" in path.parts[0]
+            or basename in RESERVED_MEMBER_NAMES
         ):
             raise ValueError(f"unsafe archive path rejected: {raw_name!r}")
         if not (member.isdir() or member.isreg()):
             raise ValueError(f"links/special archive entries are not allowed: {raw_name!r}")
 
-        normalized = path.as_posix().rstrip("/")
         if not normalized or normalized in seen:
             raise ValueError(f"duplicate or ambiguous archive path rejected: {normalized!r}")
 
@@ -110,7 +113,7 @@ def extract_archive(archive: Path, destination: Path) -> tuple[int, int]:
                 for p in root.rglob("*")
                 if p.is_file()
             )
-            manifest = root / "workspace_manifest.txt"
+            manifest = root / ".workspace_manifest.txt"
             manifest.write_text("\n".join(files) + ("\n" if files else ""), encoding="utf-8")
             staging.rename(destination)
             return len(files), total_size
