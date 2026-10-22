@@ -72,3 +72,17 @@ def test_refuses_to_overwrite_existing_destination(tmp_path):
         extract_archive(archive, destination)
 
     assert list(destination.iterdir()) == []
+
+
+def test_failed_extraction_cleans_staging_directory(tmp_path, monkeypatch):
+    archive = tmp_path / "valid.tar.gz"
+    destination = tmp_path / "out"
+    make_archive(archive, [("safe.txt", "file", "safe")])
+
+    monkeypatch.setattr(tarfile.TarFile, "extractfile", lambda self, member: None)
+
+    with pytest.raises(ValueError, match="could not read archive member"):
+        extract_archive(archive, destination)
+
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".out.tmp-*"))
