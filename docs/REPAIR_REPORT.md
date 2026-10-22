@@ -99,3 +99,26 @@ No paid service was added and no live model/database operation was run during th
 ## 9. Final checkpoint decision
 
 **MODIFY.** The two static P0 code risks have been addressed in the development branch, but the code and workflow changes remain unverified by the repository test runner. Live Dropbox/Supabase access, database compatibility, gold evaluation metrics, answer/citation quality, recovery testing and release controls remain open. Do not run bulk ingestion, change RLS, apply production migrations, merge to `main`, or declare production readiness.
+
+
+## 9. Follow-up hardening (2026-10-23)
+
+A fresh GitHub compare after the follow-up changes reports the development branch **94 commits ahead, 0 behind** `main`. This is the current comparison; the earlier 87-commit figure above describes the earlier checkpoint and is retained as historical context.
+
+Additional source changes made after that checkpoint:
+
+| File | Change | Commit | Verification |
+|---|---|---|---|
+| `scripts/validate_workspace_archive.py` | Extracted archive validation into a reusable module; validates all members before creating destination; rejects traversal/absolute/ambiguous paths, backslashes, links/special entries, duplicate paths and file/directory conflicts; enforces member and uncompressed-size limits | `88a18e424cd0e8179fb352a640e8d4edcdc8223d` | Implemented; tests not run |
+| `tests/test_workspace_archive_validator.py` | Added valid archive and unsafe archive fixtures including traversal, absolute path, backslash, symlink, duplicate entry, file/directory conflict, and pre-existing destination | `12bfc51566a519b102e7c4f87977e64f719a78cc` | Added; tests not run |
+| `.github/workflows/extract-workspace.yml` | Workflow now invokes the reusable validator module | `cfe9af46ccb65b183b3dae5c8f1505f34e5fdb31` | Source updated; workflow not run |
+| `docs/PRODUCTION_READINESS.md` | Added current evidence-based gate assessment and release blockers | `dedc875e13c1b76eb7937ce1a663bd2451286c49` | Committed; reflects known evidence boundary |
+
+No GitHub Actions run was manually dispatched. No tests were executed in the repository runtime during this follow-up. No live Supabase or Dropbox requests, database writes, migration, bulk ingestion, deployment, or change to `main` occurred.
+
+### Remaining verification
+
+- Run `python -m pytest -q --strict-config --strict-markers tests` in the actual Codespace and inspect the exact GitHub Actions run for the current commit.
+- Run the archive validator fixture tests and review any failures before relying on the workflow.
+- Verify live connectivity and schema only through authorized read-only checks.
+- Keep retrieval metrics marked `NOT MEASURED` until human-reviewed relevance labels exist.
