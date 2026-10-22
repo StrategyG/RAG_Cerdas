@@ -179,15 +179,25 @@ class PDFSource:
         source_path = str(document.get("source_path") or "").replace("\\", "/")
         cleaned = source_path.lstrip("/")
         if cleaned:
-            direct = self.pdf_dir / cleaned
-            if direct.is_file() and direct.suffix.lower() == ".pdf":
+            # Resolve symlinks and traversal segments before allowing a local read.
+            # Source metadata is external input; a PDF path must remain under PDF_DIR.
+            direct = (self.pdf_dir / cleaned).resolve()
+            try:
+                direct.relative_to(self.pdf_dir)
+            except ValueError:
+                direct = None
+            if direct is not None and direct.is_file() and direct.suffix.lower() == ".pdf":
                 return direct
         source_name = str(document.get("source_name") or "")
         if source_name:
-            matches = [p for p in self.pdf_dir.rglob("*")
-                       if p.is_file() and p.suffix.lower() == ".pdf"
-                       and p.name.casefold() == source_name.casefold()
-                       and ".dropbox_cache" not in p.parts]
+            matches = [
+                p for p in self.pdf_dir.rglob("*")
+                if p.is_file()
+                and p.suffix.lower() == ".pdf"
+                and p.name.casefold() == source_name.casefold()
+                and ".dropbox_cache" not in p.parts
+                and p.resolve().is_relative_to(self.pdf_dir)
+            ]
             if len(matches) == 1:
                 return matches[0]
             if len(matches) > 1:
