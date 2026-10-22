@@ -50,7 +50,7 @@ jobs:
                   if (
                       not raw_name
                       or path.is_absolute()
-                      or "\\\\" in raw_name
+              or chr(92) in raw_name
                       or ".." in path.parts
                       or not path.parts
                   ):
@@ -95,10 +95,10 @@ jobs:
               if p.is_file()
           )
           manifest = root / "workspace_manifest.txt"
-          manifest.write_text("".join(name + "\\n" for name in files), encoding="utf-8")
+          manifest.write_text("\n".join(files) + ("\n" if files else ""), encoding="utf-8")
           print(f"Archive validated. Extracted files: {len(files)}; declared uncompressed bytes: {total_size}")
           print("First 200 paths:")
-          print("\\n".join(files[:200]))
+          print("\n".join(files[:200]))
           PY
 
       - name: Package extracted workspace
