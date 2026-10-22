@@ -13,7 +13,7 @@ This assessment is based on GitHub repository source and branch comparison. It i
 ## Current branch state
 
 - `main` head at the compared base: `0d3b65e21f82d35ca5313418fed86b248f61fe3f`.
-- The development branch is **99 commits ahead, 0 behind** `main`.
+- The development branch was **99 commits ahead, 0 behind** at the previous assessment checkpoint. Subsequent validator hardening added code and tests; a fresh comparison before this documentation refresh showed **103 commits ahead, 0 behind**. The branch contains more than 100 commits ahead of `main`; do not merge it wholesale.
 - Do not merge the branch as a whole. It contains RAG pipeline work, migrations, workflows, tests, and a WhatsApp gateway; review and stage the diff by feature and risk.
 - No changes to `main`, live database writes, migrations, mass ingestion, deployment, or Dropbox source mutation were performed during this assessment.
 
@@ -35,8 +35,9 @@ This assessment is based on GitHub repository source and branch comparison. It i
 3. `scripts/validate_workspace_archive.py` validates archive member paths/types, rejects links and special entries, detects duplicates and file/directory conflicts, enforces member/size limits, and extracts regular files/directories only.
 4. `tests/test_workspace_archive_validator.py` adds fixtures for valid extraction, traversal, absolute paths, backslashes, symlinks, duplicate paths, file/directory conflicts, and existing destinations.
 5. `.github/workflows/extract-workspace.yml` calls the validator module instead of embedding archive extraction logic inline.
+6. Extraction now uses a temporary staging directory and cleans it up on failure before promoting it to the final destination.
 
-These are source inspection findings. The changes are **implemented but not yet test-verified** in a repository runner. The current commit status query returned no registered status checks for the latest repair checkpoint; this is not evidence that tests passed.
+These are source inspection findings. The changes are **implemented but not yet test-verified** in a repository runner. The latest combined commit-status query returned no registered status checks; this does not establish a test pass. The current commit status query returned no registered status checks for the latest repair checkpoint; this is not evidence that tests passed.
 
 ## Test and integration status
 
