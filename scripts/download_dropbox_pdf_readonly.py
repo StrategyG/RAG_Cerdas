@@ -62,17 +62,20 @@ def download_pdf(
         raise ValueError(f"PDF size mismatch: expected {expected_size} bytes, received {len(data)} bytes")
 
     destination.parent.mkdir(parents=True, exist_ok=True)
+    created_by_this_run = False
     try:
         # Exclusive creation preserves any file that may have appeared after the initial check.
         with destination.open("xb") as handle:
+            created_by_this_run = True
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
     except Exception:
-        try:
-            destination.unlink(missing_ok=True)
-        except OSError:
-            pass
+        if created_by_this_run:
+            try:
+                destination.unlink(missing_ok=True)
+            except OSError:
+                pass
         raise
 
     return {
