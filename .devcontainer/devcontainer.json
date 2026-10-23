@@ -30,6 +30,9 @@
     },
     "DROPBOX_ACCESS_TOKEN": {
       "description": "Optional. Dropbox API access token with permission to read the source PDFs."
+    },
+    "SUPABASE_DB_URL": {
+      "description": "Video RAG worker only: PostgreSQL connection URI from Supabase Dashboard → Connect. Keep this password-bearing URI only as a Codespaces Secret; never paste it into chat or commit it."
     }
   }
 }
