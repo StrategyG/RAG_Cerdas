@@ -35,7 +35,7 @@ jobs:
           test -s scripts/download_dropbox_pdf_readonly.py
           test -s scripts/video_rag_worker.py
           test -s requirements-video-rag.txt
-          test -s supabase/migrations/20261024120000_video_rag_model_alignment.sql
+          test -s supabase/migrations/20261023200123_video_rag_model_alignment.sql
           test -s tests/test_video_rag_worker.py
           test -s supabase/migrations/20261018182702_claim_ingest_jobs_only.sql
           test -s supabase/migrations/20261018183310_drop_duplicate_ingest_job_index.sql
