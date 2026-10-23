@@ -333,6 +333,10 @@ def embed_document(client: RAGClient, model: Any, document_id: str, batch_size: 
         if isinstance(result, dict):
             stored = int(result.get("stored", 0))
             updated += stored
+            # The database activates a generation only when every chunk in that
+            # generation has an embedding. Intermediate batches must therefore
+            # report zero activations; treating that as an error aborts every
+            # multi-batch document before its remaining chunks can be embedded.
             activated_documents += int(result.get("activated_documents", 0))
             if stored != len(batch):
                 raise RuntimeError(
@@ -340,6 +344,7 @@ def embed_document(client: RAGClient, model: Any, document_id: str, batch_size: 
                 )
         else:
             raise RuntimeError(f"Unexpected embedding-store result: {result!r}")
+    # Validate activation once, after all batches have been submitted.
     if activated_documents != 1:
         raise RuntimeError(
             "Embeddings were written, but the database did not activate exactly one complete "
