@@ -51,6 +51,7 @@ def extract_page_chunks(pdf_bytes: bytes, tokenizer: Any, max_tokens: int = CHUN
     chunks: list[dict[str, Any]] = []
     page_text_digests: dict[str, str] = {}
     total_nonempty_pages = 0
+    ocr_required_pages: list[int] = []
     document = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
         page_count = int(document.page_count)
@@ -59,6 +60,18 @@ def extract_page_chunks(pdf_bytes: bytes, tokenizer: Any, max_tokens: int = CHUN
         chunk_index = 0
         for page_no, page in enumerate(document, start=1):
             page_text = normalize_page_text(page.get_text("text", sort=True))
+            # Do not silently index a partial transcription of a page-sized scan.
+            # A large raster image with little selectable text requires OCR.
+            page_area = max(float(page.rect.width * page.rect.height), 1.0)
+            if len(page_text) < 80:
+                for image_info in page.get_images(full=True):
+                    image_xref = int(image_info[0])
+                    if any(
+                        (rect.width * rect.height) / page_area >= 0.25
+                        for rect in page.get_image_rects(image_xref)
+                    ):
+                        ocr_required_pages.append(page_no)
+                        break
             if not page_text:
                 continue
             total_nonempty_pages += 1
@@ -89,6 +102,12 @@ def extract_page_chunks(pdf_bytes: bytes, tokenizer: Any, max_tokens: int = CHUN
                 if end >= len(ids):
                     break
                 cursor = end - overlap
+        if ocr_required_pages:
+            pages = ", ".join(str(page) for page in sorted(set(ocr_required_pages)))
+            raise ValueError(
+                "Potential scanned/image-only page(s) require OCR before ingestion: "
+                f"{pages}. Partial PDF generations are not staged."
+            )
         if not chunks:
             raise ValueError(
                 "No selectable text extracted. This PDF may be scanned/image-only; OCR is required before ingestion."
