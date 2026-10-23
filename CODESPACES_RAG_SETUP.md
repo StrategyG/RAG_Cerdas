@@ -1,0 +1,127 @@
+# Institutional RAG on GitHub Codespaces
+
+This branch contains the page-aware PDF ingestion worker, retrieval evaluator, regression tests, Codespaces environment, and a read-only connectivity preflight. The worker never ingests automatically at Codespace creation.
+
+## 1. Create a Codespace from the right branch
+
+Open [the branch](https://github.com/StrategyG/RAG_Cerdas/tree/codespaces-institutional-rag), then choose **Code → Codespaces → Create codespace**. On Android, use desktop-site mode if GitHub hides the Code menu. Use the current branch; do not start from `main` unless these changes have been merged there.
+
+## 2. Provide secrets securely
+
+The devcontainer declares recommended secret names so GitHub can prompt for values during Codespace creation. If a Codespace already exists, configure the secrets in GitHub **Settings → Secrets and variables → Codespaces**, then restart the Codespace.
+
+Required:
+- `SUPABASE_URL` = `https://uktauwysjkseqrnbjwzy.supabase.co`
+- `SUPABASE_SERVICE_ROLE_KEY` = server-side **Secret key** (`sb_secret_...`) from Supabase Dashboard → Settings → API Keys. A legacy `service_role` JWT also works during migration, but do not use the `anon` or publishable key.
+
+Optional for Dropbox-backed source retrieval:
+- `DROPBOX_ACCESS_TOKEN` = Dropbox token with the content-read permission needed to download PDFs.
+- `DROPBOX_PREFLIGHT_PATH` = optional Dropbox path to a small accessible PDF. Defaults to `/Lesson 4 How emotions can affect your trading results.pdf`.
+
+Supabase's new `sb_secret_...` key is not a JWT: this worker sends it in the `apikey` header only. Legacy `service_role` JWTs are sent in both `apikey` and `Authorization: Bearer`. Never commit secret values, paste them into ChatGPT, or put a server key in browser code. See [Supabase API key guidance](https://supabase.com/docs/guides/getting-started/api-keys) and [migration guidance](https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys). The setup script intentionally does not copy placeholder credentials from `.env.example` into `.env`.
+
+## 3. Verify dependencies and real connections
+
+The devcontainer installs both runtime (`requirements.txt`) and test (`requirements-test.txt`) dependencies. In the terminal:
+
+```bash
+source .venv/bin/activate
+python scripts/preflight.py
+python -m compileall rag_pipeline.py eval_retrieval.py scripts/preflight.py
+python -m pytest -q --strict-config --strict-markers tests
+```
+
+Preflight now makes a **read-only request** to `rag_worker_list_documents_page` using the actual Supabase URL/key. If Dropbox token is set, it downloads the configured preflight PDF and verifies its PDF signature. It prints only connection status—not secret values. An HTTP/auth/scope failure is a blocker, not a successful setup.
+
+## 4. Verify the pilot document before writing
+
+The known pilot document is:
+
+- Name: `Lesson 4 How emotions can affect your trading results.pdf`
+- Supabase document UUID: `041f30c6-5957-49c0-a29b-e3c29a4e1ab0`
+- Dropbox path: `/Lesson 4 How emotions can affect your trading results.pdf`
+
+Run the read-only list command and a dry-run against exactly that document:
+
+```bash
+python rag_pipeline.py list
+python rag_pipeline.py ingest --document-id 041f30c6-5957-49c0-a29b-e3c29a4e1ab0 --status discovered --limit 1 --dry-run
+```
+
+Dry-run now attempts to retrieve the actual local/Dropbox bytes and verifies the PDF signature and SHA-256. It does not enqueue jobs or write chunks/embeddings. It must show exactly the intended document and `source_check: ok`. Dropbox-backed dry-run is a read operation but does download the selected PDF.
+
+If the document status has changed from `discovered`, choose the matching status explicitly after checking `list`. Do not use `--status all --limit 0` for the initial pilot.
+
+## 5. Run one-document ingestion
+
+Before any write, verify the append-only generation migration
+[`20261020055818_append_only_ingestion_generations.sql`](https://github.com/StrategyG/RAG_Cerdas/blob/codespaces-institutional-rag/supabase/migrations/20261020055818_append_only_ingestion_generations.sql)
+is applied. For the configured project `uktauwysjkseqrnbjwzy`, this migration is already recorded as version `20261020055818` and the live RPC checks have passed. Verify that
+`public.rag_worker_stage_document_generation(uuid,integer,jsonb,text)` exists,
+`public.rag_worker_replace_document_chunks(uuid,integer,jsonb)` no longer exists,
+and the staging RPC is executable by `service_role` only. For any other Supabase project, apply the migration through the repository's normal migration process before ingestion. Do not run ingestion if these checks fail.
+
+Only after the dry-run, preflight, and migration checks pass:
+
+```bash
+python rag_pipeline.py ingest --document-id 041f30c6-5957-49c0-a29b-e3c29a4e1ab0 --status discovered --limit 1
+```
+
+The worker splits extracted text within individual PDF pages, stages a new page-aware chunk generation without deleting existing chunk rows, generates normalized 384-dimensional `intfloat/multilingual-e5-small` embeddings, and activates that generation only when every chunk in it has an embedding and a valid one-page citation. It records the SHA-256 of the original PDF on successful activation. Retrieval keeps using the prior active/legacy generation while a new generation is pending, then switches to the new generation after the completion gate passes. Old chunk rows remain stored; they are not deleted by this migration.
+
+The queue now has a dedicated ingest-only claim RPC and a partial unique index to avoid more than one active ingest job per document/type. The worker scopes claims to the selected document UUIDs; it will not accidentally claim other job types or unrelated documents. CPU embedding may be slow on first run because model weights must be downloaded.
+
+Run the read-only SQL checks in [`supabase/verification/verify_ingestion_state.sql`](https://github.com/StrategyG/RAG_Cerdas/blob/codespaces-institutional-rag/supabase/verification/verify_ingestion_state.sql) and inspect the resulting document/chunk counts before processing another PDF. If a document fails, read its `ingest_error`; correct the source or token problem first. Retry only that document, with its actual current status.
+
+## 6. Expand to the full corpus
+
+Do this only after the one-document pilot is successful and Codespaces Secrets are verified. First audit every recoverable document's source metadata without downloading PDFs or writing to Supabase:
+
+```bash
+python rag_pipeline.py ingest --status all --limit 0 --audit-sources
+```
+
+This checks all documents that are not already `indexed` or `skipped`, including the existing `discovered`, `processing`, and `failed` records. For Dropbox, the token needs both metadata-read permission (for `files/get_metadata`) and content-read permission (for `files/download`). Any missing path, size mismatch, inaccessible file, or invalid local PDF signature is reported. Fix source issues and rerun the audit until `sources_failed: 0`; do not proceed while the audit has failures unless you intentionally accept a partial corpus.
+
+For the current Dropbox inventory, audit only the ebook PDFs first. This excludes the 23 MP4 lessons from this pipeline. Ensure the append-only migration above is applied and verified before running the write command below:
+
+```bash
+python rag_pipeline.py ingest --status all --limit 0 --pdf-only --exclude-document-id 660d1f25-b11a-4403-b243-f7962ab00700 --audit-sources
+```
+
+At the current snapshot, Dropbox has 360 PDF paths but 359 unique PDF content hashes. `Lesson 4 How emotions can affect your trading results.pdf` exists both at the root and under `/Institutional_RAG/01_RAW_SOURCES/`; both paths return the same Dropbox content hash, so the nested copy is an exact duplicate. Supabase has 360 PDF catalog rows, including one stale row for `/akses 1000+.pdf` that is not present in Dropbox. The command explicitly excludes only that stale document UUID (`660d1f25-b11a-4403-b243-f7962ab00700`). The expected audit is therefore 359 selected PDF rows and zero source failures. If any source fails, stop and investigate its path, permissions, or size before ingestion.
+
+After the audit matches that expected pattern, start the recoverable PDF corpus run:
+
+```bash
+python rag_pipeline.py ingest --status all --limit 0 --pdf-only --exclude-document-id 660d1f25-b11a-4403-b243-f7962ab00700 --continue-on-error
+```
+
+Safety/behavior:
+- `--limit 0` explicitly selects all eligible documents; the normal default remains one document.
+- The append-only migration must be applied before ingestion. It retires the old chunk-replacement RPC that deleted existing `rag.chunks` rows.
+- New generations are appended with `ingest_generation` metadata. The previous active generation remains available until the pending generation has fully embedded; retrieval switches to the new active generation only after that gate passes.
+- All prior and superseded chunk rows remain in the database. This preserves history but increases database storage; review storage capacity as the corpus grows.
+- `--pdf-only` excludes videos and other formats from ebook ingestion.
+- `--exclude-document-id` is an explicit exclusion for the known stale `/akses 1000+.pdf` row only. Unexpected source failures remain errors; do not add other document IDs to the exclusion list without reviewing them.
+- `--status all` excludes `indexed` and `skipped` documents unless `--reprocess-indexed` is explicitly added. Do not add that flag for a normal recovery run.
+- The worker verifies source metadata and expected file size before enqueueing; each actual download is checked again for PDF signature and file size.
+- Each document is split within original PDF pages, written through the server-only RPC, embedded with the 384-dimensional multilingual E5 model, and marked indexed only after the database gate passes.
+- `--continue-on-error` lets the worker continue after an individual PDF fails. Check each per-document result and rerun failed PDFs after reviewing their current status.
+- The run downloads PDFs from Dropbox and writes chunks and embeddings to Supabase. Keep one Codespace worker running at a time; do not close the Codespace during processing.
+
+After completion, run the read-only checks in `supabase/verification/verify_ingestion_state.sql`. Check that indexed documents have complete page mappings and embeddings. Scanned/image-only PDFs will fail text extraction and need an OCR stage; do not mark them indexed manually.
+
+## 7. Evaluate only with reviewed labels
+
+```bash
+python eval_retrieval.py --cases eval_cases.json --k 5
+```
+
+The three pilot questions have expected evidence notes but no manually reviewed gold chunk IDs. The evaluator inspects keyword and semantic results, but it must withhold P@5, Recall@5, MRR@5, and nDCG@5 until a reviewer labels the new chunk IDs under `relevant_chunk_ids`. Citation accuracy requires checking page numbers against the original PDFs.
+
+## 8. What CI proves—and does not prove
+
+GitHub Actions fails if required source/test files are absent. It compiles the worker and evaluator, runs regression tests, and validates evaluation cases. This is code validation only; it does not use production secrets, start a Codespace, download the embedding model, or execute real ingestion.
+
+A production-ready claim requires the one-document Codespaces pilot, successful Supabase state checks, retrieval quality labels, and original-PDF citation checks.

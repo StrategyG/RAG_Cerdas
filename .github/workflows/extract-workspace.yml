@@ -9,80 +9,33 @@ permissions:
 jobs:
   extract:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Verify archive
+      - name: Inspect archive contents
+        shell: bash
         run: |
           set -euo pipefail
-
           ARCHIVE="workspace(1).tar.gz"
+          test -f "$ARCHIVE"
+          tar -tzf "$ARCHIVE" > archive_listing.txt
+          echo "===== ARCHIVE CONTENT (first 200 lines) ====="
+          sed -n '1,200p' archive_listing.txt
 
-          if [ ! -f "$ARCHIVE" ]; then
-            echo "::error::Archive not found: $ARCHIVE"
-            exit 1
-          fi
-
-          echo "Archive found:"
-          ls -lh "$ARCHIVE"
-
-      - name: Inspect archive
+      - name: Validate and safely extract archive
+        shell: bash
         run: |
           set -euo pipefail
-
-          echo "===== ARCHIVE CONTENT ====="
-          tar -tzf "workspace(1).tar.gz" | head -200
-
-      - name: Extract workspace
-        run: |
-          set -euo pipefail
-
-          rm -rf extracted_workspace
-          mkdir -p extracted_workspace
-
-          tar \
-            --extract \
-            --gzip \
-            --file="workspace(1).tar.gz" \
-            --directory=extracted_workspace
-
-      - name: Display workspace structure
-        run: |
-          set -euo pipefail
-
-          echo "===== EXTRACTED STRUCTURE ====="
-
-          find extracted_workspace \
-            -maxdepth 4 \
-            -type f \
-            | sort \
-            | head -500
-
-      - name: Create workspace manifest
-        run: |
-          set -euo pipefail
-
-          find extracted_workspace \
-            -type f \
-            -printf '%p\n' \
-            | sort \
-            > extracted_workspace/workspace_manifest.txt
-
-          echo "===== FILE COUNT ====="
-          wc -l extracted_workspace/workspace_manifest.txt
+          python scripts/validate_workspace_archive.py --archive "workspace(1).tar.gz" --destination extracted_workspace
 
       - name: Package extracted workspace
+        shell: bash
         run: |
           set -euo pipefail
-
-          tar \
-            --create \
-            --gzip \
-            --file=workspace-extracted.tar.gz \
-            extracted_workspace
-
+          tar --create --gzip --file=workspace-extracted.tar.gz extracted_workspace
           ls -lh workspace-extracted.tar.gz
 
       - name: Upload extracted workspace

@@ -1,0 +1,5 @@
+# CPU-only pilot dependencies for scripts/video_rag_worker.py
+faster-whisper==1.1.1
+sentence-transformers==4.1.0
+psycopg[binary]==3.2.9
+requests==2.32.4
