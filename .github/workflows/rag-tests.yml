@@ -33,6 +33,10 @@ jobs:
           test -s scripts/preflight.py
           test -s scripts/supabase_http.py
           test -s scripts/download_dropbox_pdf_readonly.py
+          test -s scripts/video_rag_worker.py
+          test -s requirements-video-rag.txt
+          test -s supabase/migrations/20261024120000_video_rag_model_alignment.sql
+          test -s tests/test_video_rag_worker.py
           test -s supabase/migrations/20261018182702_claim_ingest_jobs_only.sql
           test -s supabase/migrations/20261018183310_drop_duplicate_ingest_job_index.sql
           test -s supabase/verification/verify_ingestion_state.sql
@@ -67,7 +71,7 @@ jobs:
         run: bash -n .devcontainer/post-create.sh
 
       - name: Compile RAG modules
-        run: python -m py_compile rag_pipeline.py eval_retrieval.py scripts/preflight.py scripts/download_dropbox_pdf_readonly.py
+        run: python -m py_compile rag_pipeline.py eval_retrieval.py scripts/preflight.py scripts/download_dropbox_pdf_readonly.py scripts/video_rag_worker.py
 
       - name: Run unit tests (required)
         run: python -m pytest -q --strict-config --strict-markers tests
