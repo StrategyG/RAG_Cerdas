@@ -80,3 +80,5 @@ def test_video_retrieval_migration_filters_active_generation_and_uses_e5():
     assert "intfloat/multilingual-e5-small" in migration
     assert "c.metadata->>'start_timestamp'" in migration
     assert "c.metadata->>'end_timestamp'" in migration
+    assert "c.page_start IS NOT NULL" in migration
+    assert "c.page_end = c.page_start" in migration
