@@ -83,9 +83,15 @@ jobs:
               assert case.get("query") and isinstance(case.get("query"), str)
               assert case["query_id"] not in ids, f"duplicate query_id: {case['query_id']}"
               ids.add(case["query_id"])
+              status = case.get("label_status")
+              assert isinstance(status, str) and status, "label_status must be explicit"
               qrels = case.get("relevant_chunk_ids", {})
               assert isinstance(qrels, (dict, list)), "relevant_chunk_ids must be a dict or list"
-              if isinstance(qrels, dict):
-                  assert all(isinstance(v, int) and v >= 0 for v in qrels.values())
-          print(f"Validated {len(cases)} evaluation cases; unlabeled cases remain unscored.")
+              if status == "reviewed":
+                  if isinstance(qrels, dict):
+                      assert all(isinstance(cid, str) and cid.strip() for cid in qrels), "reviewed qrels need non-empty chunk IDs"
+                      assert all(type(grade) is int and grade >= 0 for grade in qrels.values()), "reviewed qrels grades must be non-negative integers"
+                  else:
+                      assert all(isinstance(cid, (str, int)) and not isinstance(cid, bool) and str(cid).strip() for cid in qrels), "reviewed qrels list needs non-empty chunk IDs"
+          print(f"Validated {len(cases)} evaluation cases; only explicitly reviewed labels can be scored.")
           PY
