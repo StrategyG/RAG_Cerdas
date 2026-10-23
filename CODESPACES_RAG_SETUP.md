@@ -17,6 +17,7 @@ Required:
 Optional for Dropbox-backed source retrieval:
 - `DROPBOX_ACCESS_TOKEN` = Dropbox token with the content-read permission needed to download PDFs.
 - `DROPBOX_PREFLIGHT_PATH` = optional Dropbox path to a small accessible PDF. Defaults to `/Lesson 4 How emotions can affect your trading results.pdf`.
+- `SUPABASE_DB_URL` = required only for the separate MP4 transcription worker; use the PostgreSQL connection URI from Supabase Dashboard → Connect. This contains database credentials, so store it only in Codespaces Secrets or a git-ignored local `.env`.
 
 Supabase's new `sb_secret_...` key is not a JWT: this worker sends it in the `apikey` header only. Legacy `service_role` JWTs are sent in both `apikey` and `Authorization: Bearer`. Never commit secret values, paste them into ChatGPT, or put a server key in browser code. See [Supabase API key guidance](https://supabase.com/docs/guides/getting-started/api-keys) and [migration guidance](https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys). The setup script intentionally does not copy placeholder credentials from `.env.example` into `.env`.
 
@@ -120,7 +121,34 @@ python eval_retrieval.py --cases eval_cases.json --k 5
 
 The three pilot questions have expected evidence notes but no manually reviewed gold chunk IDs. The evaluator inspects keyword and semantic results, but it must withhold P@5, Recall@5, MRR@5, and nDCG@5 until a reviewer labels the new chunk IDs under `relevant_chunk_ids`. Citation accuracy requires checking page numbers against the original PDFs.
 
-## 8. What CI proves—and does not prove
+## 8. Video RAG pilot for MP4
+
+The PDF worker deliberately uses page numbers and excludes MP4 files. Videos need a separate transcription path: Whisper creates timestamped transcript segments, then the same `intfloat/multilingual-e5-small` model creates embeddings. The active video generation is exposed only when its chunk embeddings are complete. Visible text from slides is not OCR'd by this worker.
+
+First install the optional video dependencies inside the Codespace:
+
+```bash
+source .venv/bin/activate
+python -m pip install -r requirements-video-rag.txt
+```
+
+Set `SUPABASE_DB_URL` and `DROPBOX_ACCESS_TOKEN` in Codespaces Secrets, restart the Codespace, then run exactly one Indonesian MP4 as a pilot:
+
+```bash
+python scripts/video_rag_worker.py --limit 1 --language id
+```
+
+Confirm the output says `INDEXED`, then execute the read-only checks in [`supabase/verification/verify_video_rag.sql`](https://github.com/StrategyG/RAG_Cerdas/blob/codespaces-institutional-rag/supabase/verification/verify_video_rag.sql). Verify that the active generation has chunks, non-null 384-dimensional embeddings from the agreed model, and start/end timestamps. The lexical retrieval smoke test should include a `[Video HH:MM:SS - HH:MM:SS]` prefix. A transcript job with no usable speech should stay failed rather than being marked indexed.
+
+Only after that pilot is validated, process the remaining discoverable/failed MP4 catalog:
+
+```bash
+python scripts/video_rag_worker.py --limit 23 --language id
+```
+
+The worker selects only Dropbox `video/mp4` rows in `discovered` or `failed` status, so already-indexed videos are not intentionally reprocessed. Review every failed file and re-run only after correcting the cause. Never paste the PostgreSQL URI or Dropbox token into ChatGPT or commit either secret.
+
+## 9. What CI proves—and does not prove
 
 GitHub Actions fails if required source/test files are absent. It compiles the worker and evaluator, runs regression tests, and validates evaluation cases. This is code validation only; it does not use production secrets, start a Codespace, download the embedding model, or execute real ingestion.
 
