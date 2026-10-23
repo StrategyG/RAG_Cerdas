@@ -82,3 +82,14 @@ def test_video_retrieval_migration_filters_active_generation_and_uses_e5():
     assert "c.metadata->>'end_timestamp'" in migration
     assert "c.page_start IS NOT NULL" in migration
     assert "c.page_end = c.page_start" in migration
+
+
+
+def test_video_reingestion_is_append_only_and_generation_metadata_is_unambiguous():
+    worker = Path("scripts/video_rag_worker.py").read_text(encoding="utf-8")
+
+    assert "DELETE FROM rag.chunks" not in worker
+    assert '"video_generation": generation' in worker
+    assert '"previous_generations_retained": True' in worker
+    assert '"chunk_count": len(chunks)' in worker
+    assert '"generation_count"' not in worker
