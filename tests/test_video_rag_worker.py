@@ -72,7 +72,7 @@ def test_embedding_validation_rejects_wrong_count_dimensions_and_nonfinite_value
 
 def test_video_retrieval_migration_filters_active_generation_and_uses_e5():
     migration = Path(
-        "supabase/migrations/20261024120000_video_rag_model_alignment.sql"
+        "supabase/migrations/20261023200123_video_rag_model_alignment.sql"
     ).read_text(encoding="utf-8")
 
     assert "d.metadata->'video_rag'->>'active_generation'" in migration
