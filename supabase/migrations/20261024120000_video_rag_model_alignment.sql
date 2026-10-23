@@ -60,11 +60,15 @@ AS $function$
           (
             NULLIF(d.metadata->'page_aware_ingest'->>'active_generation', '') IS NOT NULL
             AND c.metadata->>'ingest_generation' = d.metadata->'page_aware_ingest'->>'active_generation'
+            AND c.page_start IS NOT NULL
+            AND c.page_end = c.page_start
           )
           OR
           (
             NULLIF(d.metadata->'page_aware_ingest'->>'active_generation', '') IS NULL
             AND c.metadata->>'ingest_generation' IS NULL
+            AND c.page_start IS NOT NULL
+            AND c.page_end = c.page_start
           )
         )
       )
@@ -128,11 +132,15 @@ AS $function$
           (
             NULLIF(d.metadata->'page_aware_ingest'->>'active_generation', '') IS NOT NULL
             AND c.metadata->>'ingest_generation' = d.metadata->'page_aware_ingest'->>'active_generation'
+            AND c.page_start IS NOT NULL
+            AND c.page_end = c.page_start
           )
           OR
           (
             NULLIF(d.metadata->'page_aware_ingest'->>'active_generation', '') IS NULL
             AND c.metadata->>'ingest_generation' IS NULL
+            AND c.page_start IS NOT NULL
+            AND c.page_end = c.page_start
           )
         )
       )
