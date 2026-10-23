@@ -12,6 +12,7 @@ Full recursive Dropbox listing completed in two pages:
 - 360 PDF files.
 - 23 MP4 videos.
 - 18 folders.
+- Video catalog reconciliation after the six inserts: exact 23/23 Dropbox ID match, no duplicate IDs, no missing/stale video rows, and no size mismatches.
 
 Supabase `rag.documents` initially had 360 PDF rows and 17 video rows. Six missing MP4 catalog rows were inserted additively (all received fresh UUIDs and status `discovered`). Read-only verification after insertion returned 23 video rows, 23 `discovered`, 0 `indexed`, 0 `failed`; there are still 0 video chunks and 0 video embeddings. No video transcription or PDF ingestion ran as part of catalog repair.
 
