@@ -1,7 +1,7 @@
 -- Read-only verification for citation-safe RAG retrieval.
 -- Execute through Supabase SQL Editor after applying migration
 -- 20261023195626_citation_safe_retrieval_and_evaluation_index.sql.
--- Zero search results are expected until page-aware ingestion activates a valid generation.
+-- PDF search results are withheld until they have valid per-page mappings. Active video results are allowed only when their transcript timestamp prefix is present.
 
 WITH keyword_results AS (
   SELECT * FROM rag.match_chunks_keyword('ikigai', 20, 0)
@@ -19,8 +19,11 @@ semantic_results AS (
 SELECT 'rag_keyword' AS test,
        count(*)::bigint AS rows_returned,
        count(*) FILTER (
-         WHERE page_start IS NULL OR page_start < 1 OR page_end <> page_start
-       )::bigint AS invalid_page_citations,
+         WHERE NOT (
+           (page_start IS NOT NULL AND page_start >= 1 AND page_end = page_start)
+           OR text_content ~ '^\\[Video [0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)? - [0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?\\] '
+         )
+       )::bigint AS invalid_citations,
        count(*) > 0 AS has_searchable_evidence
 FROM keyword_results
 UNION ALL
@@ -55,9 +58,12 @@ SELECT
   (SELECT count(*) FROM rag.documents
    WHERE NULLIF(metadata->'page_aware_ingest'->>'active_generation', '') IS NOT NULL)
     AS page_aware_active_documents,
-  (SELECT count(*) FROM rag.chunks
-   WHERE page_start IS NULL OR page_start < 1 OR page_end <> page_start)
-    AS legacy_or_invalid_page_chunks,
+  (SELECT count(*)
+   FROM rag.chunks AS c
+   JOIN rag.documents AS d ON d.id = c.document_id
+   WHERE d.mime_type IS DISTINCT FROM 'video/mp4'
+     AND (c.page_start IS NULL OR c.page_start < 1 OR c.page_end <> c.page_start))
+    AS legacy_or_invalid_pdf_page_chunks,
   (SELECT count(*) FROM rag.chunks WHERE embedding IS NOT NULL)
     AS chunks_with_embeddings,
   (SELECT count(*) FROM rag.ingest_jobs WHERE status IN ('queued', 'running'))
