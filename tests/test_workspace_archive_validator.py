@@ -35,7 +35,7 @@ def test_extracts_valid_archive_and_writes_manifest(tmp_path):
     count, size = extract_archive(archive, destination)
 
     assert (destination / "docs/guide.txt").read_text() == "safe content"
-    assert "docs/guide.txt" in (destination / ".workspace_manifest.txt").read_text()
+    assert "docs/guide.txt" in (destination / "workspace_manifest.txt").read_text()
     assert count == 1
     assert size == len("safe content")
 
