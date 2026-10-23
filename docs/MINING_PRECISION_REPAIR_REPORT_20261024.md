@@ -32,10 +32,11 @@ PDF catalog reconciliation:
 
 ## Live Supabase data state
 
-- 360 PDF rows: 226 `discovered`, 103 `processing`, 31 `failed`, 0 `indexed`.
+- Current live state: 360 PDF rows; 329 `discovered`, 31 `failed`, 0 `processing`, and 0 `indexed`.
+- Audit logs record 103 `orphan_processing_recovered` events at `2026-10-23 19:59:01 UTC`; those rows were returned to `discovered` before the new retrieval migration was applied. This reset was not performed by the retrieval migration.
 - 23 MP4 rows after catalog reconciliation: 23 `discovered`, 0 `indexed`.
-- Previous read-only chunk audit: 25,343 legacy rows; 0 embeddings, 0 page-mapped chunks, 0 `qdrant_point_id` values, and 0 `embedding_model` values.
-- `rag.ingest_jobs` was empty in the prior audit. Existing `processing` rows need diagnosis, not a bulk reset.
+- Read-only chunk audit: 25,343 legacy rows; 0 embeddings, 0 page-mapped chunks, 0 `qdrant_point_id` values, and 0 `embedding_model` values.
+- `rag.ingest_jobs` currently has 0 rows.
 
 ## Code changes on `codespaces-institutional-rag`
 
