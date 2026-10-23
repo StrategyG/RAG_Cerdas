@@ -163,12 +163,12 @@ def main() -> None:
             "a different model needs a coordinated migration."
         )
 
+    db_url = require_env("SUPABASE_DB_URL")
+    dropbox_token = require_env("DROPBOX_ACCESS_TOKEN")
+
     import psycopg
     from faster_whisper import WhisperModel
     from sentence_transformers import SentenceTransformer
-
-    db_url = require_env("SUPABASE_DB_URL")
-    dropbox_token = require_env("DROPBOX_ACCESS_TOKEN")
     print(
         f"Loading speech model={args.model!r} device={WHISPER_DEVICE!r}; "
         f"embedding model={EMBEDDING_MODEL!r}"
