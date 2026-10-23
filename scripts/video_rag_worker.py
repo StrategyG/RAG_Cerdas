@@ -238,8 +238,21 @@ def main() -> None:
                     if not chunks:
                         raise RuntimeError("Transcription produced no non-empty timestamped text chunks.")
 
+                    passage_texts = prepare_passages(chunks)
+                    token_counts = [
+                        len(embedding_model.tokenizer.encode(chunk["text"], add_special_tokens=False))
+                        for chunk in chunks
+                    ]
+                    encoded_lengths = [
+                        len(embedding_model.tokenizer.encode(text, add_special_tokens=True))
+                        for text in passage_texts
+                    ]
+                    if any(length > embedding_model.max_seq_length for length in encoded_lengths):
+                        raise RuntimeError(
+                            "Transcript chunk exceeds the embedding model token limit; refusing silent truncation."
+                        )
                     encoded = embedding_model.encode(
-                        prepare_passages(chunks),
+                        passage_texts,
                         normalize_embeddings=True,
                         convert_to_numpy=True,
                         show_progress_bar=False,
@@ -297,7 +310,7 @@ def main() -> None:
                                     document_id,
                                     next_chunk_index + offset,
                                     chunk["text"],
-                                    chunk["word_count"],
+                                    token_counts[offset],
                                     chunk_hash,
                                     json.dumps(chunk_metadata),
                                     vector_literal,
