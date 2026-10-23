@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import re
+from uuid import UUID
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -31,9 +32,14 @@ def _normalize_chunk_id(chunk_id: Any) -> str:
         value = chunk_id.strip()
         if not value:
             raise ValueError("chunk_id cannot be empty or whitespace")
-        if not re.fullmatch(r"\d+", value):
-            raise ValueError(f"chunk_id must be a non-negative integer string, got {chunk_id!r}")
-        return str(int(value))
+        if re.fullmatch(r"\d+", value):
+            return str(int(value))
+        try:
+            # PostgreSQL RAG chunks use UUID primary keys; canonicalize UUID case.
+            return str(UUID(value))
+        except ValueError:
+            # Keep non-empty opaque IDs usable for generic, deterministic eval fixtures.
+            return value
     raise TypeError(f"chunk_id type not supported: {type(chunk_id).__name__}")
 
 
