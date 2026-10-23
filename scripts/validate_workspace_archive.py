@@ -82,6 +82,9 @@ def extract_archive(archive: Path, destination: Path) -> tuple[int, int]:
     if destination.exists():
         raise FileExistsError("destination already exists; refusing to overwrite it")
 
+    # Ensure the parent exists, but do not create/replace the destination until validation succeeds.
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
     # Validate every entry before creating a staging directory.
     with tarfile.open(archive, mode="r:gz") as tar:
         members, total_size = validate_members(tar.getmembers(), destination.resolve())
@@ -113,7 +116,7 @@ def extract_archive(archive: Path, destination: Path) -> tuple[int, int]:
                 for p in root.rglob("*")
                 if p.is_file()
             )
-            manifest = root / ".workspace_manifest.txt"
+            manifest = root / "workspace_manifest.txt"
             manifest.write_text("\n".join(files) + ("\n" if files else ""), encoding="utf-8")
             staging.rename(destination)
             return len(files), total_size
