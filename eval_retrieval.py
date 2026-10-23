@@ -16,26 +16,46 @@ from rag_pipeline import RAGClient, MODEL_ID, load_embedding_model
 load_dotenv()
 
 
+def _normalize_chunk_id(value: Any, *, field_name: str) -> str:
+    """Normalize a chunk identifier while rejecting empty and boolean placeholders."""
+    if isinstance(value, bool):
+        raise ValueError(f"Reviewed {field_name} must contain non-empty chunk IDs")
+    if isinstance(value, (str, int)):
+        chunk_id = str(value).strip()
+    else:
+        raise ValueError(f"Reviewed {field_name} must contain non-empty chunk IDs")
+    if not chunk_id:
+        raise ValueError(f"Reviewed {field_name} must contain non-empty chunk IDs")
+    return chunk_id
+
+
 def normalize_reviewed_qrels(case: dict[str, Any]) -> dict[str, int]:
     """Return relevance labels only after explicit human review; otherwise withhold them."""
+    if not isinstance(case, dict):
+        raise ValueError("Reviewed qrels require a case mapping")
+
     raw = case.get("relevant_chunk_ids", {})
-    label_status = case.get("label_status")
+    label_status = str(case.get("label_status", "")).strip().lower()
     if label_status != "reviewed":
         return {}
-    if isinstance(raw, list):
-        if any(not isinstance(chunk_id, (str, int)) or isinstance(chunk_id, bool)
-               or not str(chunk_id).strip() for chunk_id in raw):
-            raise ValueError("Reviewed relevant_chunk_ids list must contain non-empty chunk IDs")
-        return {str(chunk_id): 1 for chunk_id in raw}
+
+    if raw is None:
+        raise ValueError("Reviewed relevant_chunk_ids cannot be null")
+    if isinstance(raw, (list, tuple, set)):
+        qrels: dict[str, int] = {}
+        for chunk_id in raw:
+            normalized_id = _normalize_chunk_id(chunk_id, field_name="relevant_chunk_ids list")
+            qrels[normalized_id] = 1
+        return qrels
     if not isinstance(raw, dict):
         raise ValueError("Reviewed relevant_chunk_ids must be a mapping or list")
+
     qrels: dict[str, int] = {}
     for chunk_id, grade in raw.items():
-        if not isinstance(chunk_id, str) or not chunk_id.strip():
-            raise ValueError("Reviewed qrels keys must be non-empty chunk ID strings")
+        normalized_id = _normalize_chunk_id(chunk_id, field_name="qrels keys")
         if isinstance(grade, bool) or not isinstance(grade, int) or grade < 0:
             raise ValueError("Reviewed qrels grades must be non-negative integers")
-        qrels[chunk_id] = grade
+        qrels[normalized_id] = int(grade)
     return qrels
 
 
