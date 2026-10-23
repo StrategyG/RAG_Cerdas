@@ -2,7 +2,7 @@
 
 ## Current verified state
 
-- Dropbox's full recursive inventory found 23 MP4 files. Six missing video catalog rows were added additively to Supabase on 2026-10-24; a read-only follow-up verified 23 video rows, all `discovered`, with 0 video chunks and 0 video embeddings.
+- Dropbox's full recursive inventory found 23 MP4 files. Six missing video catalog rows were added additively to Supabase on 2026-10-24. A subsequent ID-and-size reconciliation found an exact 23/23 match, with no missing, stale, size-mismatched, or duplicate video IDs; all 23 remain `discovered`, with 0 video chunks and 0 video embeddings.
 - `rag.chunks.embedding` is `vector(384)`. The PDF ingestion worker and query evaluator use `intfloat/multilingual-e5-small`.
 - The video worker must use that exact embedding model and the E5 `passage:` prefix. A different model is incompatible even if it also emits 384-dimensional vectors.
 - The video worker now uses append-only generations. It writes a new set of chunks, then switches `metadata.video_rag.active_generation` only when the complete transcript and all embeddings are ready. It does not delete prior chunks.
