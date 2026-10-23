@@ -37,6 +37,8 @@ PDF catalog reconciliation:
 - 23 MP4 rows after catalog reconciliation: 23 `discovered`, 0 `indexed`.
 - Read-only chunk audit: 25,343 legacy rows; 0 embeddings, 0 page-mapped chunks, 0 `qdrant_point_id` values, and 0 `embedding_model` values.
 - `rag.ingest_jobs` currently has 0 rows.
+- Post-migration keyword smoke query `trading` returned 0 eligible results because no legacy chunk has a valid single-page mapping; a semantic RPC smoke query also returned 0 because there are no embeddings. These are fail-closed smoke results, not evidence of successful retrieval quality.
+- Retrieval RPC permissions were rechecked: `service_role` can execute both public wrappers; `anon` and `authenticated` cannot.
 
 ## Code changes on `codespaces-institutional-rag`
 
@@ -53,7 +55,7 @@ PDF catalog reconciliation:
 - The migration `20261023200123_video_rag_model_alignment.sql` has been applied to the live Supabase project and verified in migration history. Read-only function checks confirm active-video-generation filters, E5-model filtering for semantic retrieval, and single-page mapping checks for PDF retrieval.
 - GitHub Actions returned no usable run/status evidence for these latest changes; do not claim the tests passed.
 - No live Codespaces terminal execution was performed.
-- No complete PDF download/hash audit, OCR pass, PDF mining, video transcription, embedding, or semantic retrieval test ran.
+- No complete PDF download/hash audit, OCR pass, PDF mining, video transcription, embedding, or retrieval-quality evaluation ran. Only fail-closed smoke queries were executed.
 - Gold evaluation cases still require human-reviewed relevance labels before Recall@k, MRR, or nDCG can be measured honestly.
 
 ## Release gates
