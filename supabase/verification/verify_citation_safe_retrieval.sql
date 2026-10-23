@@ -1,6 +1,7 @@
 -- Read-only verification for citation-safe RAG retrieval.
--- Execute through Supabase SQL Editor after applying migration
--- 20261023195626_citation_safe_retrieval_and_evaluation_index.sql.
+-- Execute through Supabase SQL Editor after applying migrations
+-- 20261023195626_citation_safe_retrieval_and_evaluation_index.sql and
+-- 20261023200123_video_rag_model_alignment.sql.
 -- PDF search results are withheld until they have valid per-page mappings. Active video results are allowed only when their transcript timestamp prefix is present.
 
 WITH keyword_results AS (
