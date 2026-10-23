@@ -35,7 +35,10 @@ AS $function$
     c.chunk_index,
     c.page_start,
     c.page_end,
-    c.text_content,
+    CASE WHEN d.mime_type = 'video/mp4' THEN
+      '[Video ' || COALESCE(c.metadata->>'start_timestamp', 'time unknown') || ' - ' ||
+      COALESCE(c.metadata->>'end_timestamp', 'time unknown') || '] ' || c.text_content
+    ELSE c.text_content END AS text_content,
     c.content_sha256,
     pg_catalog.ts_rank_cd(c.search_vector, q.tsq)::double precision AS rank
   FROM rag.chunks AS c
@@ -99,7 +102,10 @@ AS $function$
     c.chunk_index,
     c.page_start,
     c.page_end,
-    c.text_content,
+    CASE WHEN d.mime_type = 'video/mp4' THEN
+      '[Video ' || COALESCE(c.metadata->>'start_timestamp', 'time unknown') || ' - ' ||
+      COALESCE(c.metadata->>'end_timestamp', 'time unknown') || '] ' || c.text_content
+    ELSE c.text_content END AS text_content,
     c.content_sha256,
     (1 - (c.embedding OPERATOR(extensions.<=>) query_embedding))::double precision AS similarity
   FROM rag.chunks AS c
