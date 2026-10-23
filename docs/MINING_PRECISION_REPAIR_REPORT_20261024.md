@@ -49,7 +49,7 @@ PDF catalog reconciliation:
 
 ## Explicitly not yet verified
 
-- The migration `20261024120000_video_rag_model_alignment.sql` is present on the development branch but has **not** been applied to the live Supabase project.
+- The migration `20261023200123_video_rag_model_alignment.sql` has been applied to the live Supabase project and verified in migration history. Read-only function checks confirm active-video-generation filters, E5-model filtering for semantic retrieval, and single-page mapping checks for PDF retrieval.
 - GitHub Actions returned no usable run/status evidence for these latest changes; do not claim the tests passed.
 - No live Codespaces terminal execution was performed.
 - No complete PDF download/hash audit, OCR pass, PDF mining, video transcription, embedding, or semantic retrieval test ran.
