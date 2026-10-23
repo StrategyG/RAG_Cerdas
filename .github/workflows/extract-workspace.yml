@@ -15,6 +15,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Inspect archive contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="workspace(1).tar.gz"
+          test -f "$ARCHIVE"
+          tar -tzf "$ARCHIVE" > archive_listing.txt
+          echo "===== ARCHIVE CONTENT (first 200 lines) ====="
+          sed -n '1,200p' archive_listing.txt
+
       - name: Validate and safely extract archive
         shell: bash
         run: |
