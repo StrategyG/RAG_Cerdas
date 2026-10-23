@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,14 +17,89 @@ from rag_pipeline import RAGClient, MODEL_ID, load_embedding_model
 load_dotenv()
 
 
+def _normalize_chunk_id(chunk_id: Any) -> str:
+    """Normalize chunk IDs to a canonical string and reject invalid values early."""
+    if chunk_id is None:
+        raise ValueError("chunk_id cannot be null")
+    if isinstance(chunk_id, bool):
+        raise ValueError("chunk_id cannot be boolean")
+    if isinstance(chunk_id, int):
+        if chunk_id < 0:
+            raise ValueError(f"chunk_id must be non-negative, got {chunk_id!r}")
+        return str(chunk_id)
+    if isinstance(chunk_id, str):
+        value = chunk_id.strip()
+        if not value:
+            raise ValueError("chunk_id cannot be empty or whitespace")
+        if not re.fullmatch(r"\d+", value):
+            raise ValueError(f"chunk_id must be a non-negative integer string, got {chunk_id!r}")
+        return str(int(value))
+    raise TypeError(f"chunk_id type not supported: {type(chunk_id).__name__}")
+
+
+def _normalize_grade(grade: Any) -> int:
+    """Normalize qrel grades to a non-negative integer; reject unsupported values."""
+    if isinstance(grade, bool):
+        raise ValueError("grade cannot be boolean")
+    if not isinstance(grade, int):
+        raise TypeError(f"grade type not supported: {type(grade).__name__}")
+    if grade < 0:
+        raise ValueError(f"grade must be non-negative, got {grade!r}")
+    return grade
+
+
+def normalize_qrels(qrels: Any) -> dict[str, int]:
+    """Validate qrels and normalize IDs/grades to canonical values."""
+    if qrels is None:
+        return {}
+    if isinstance(qrels, list):
+        normalized: dict[str, int] = {}
+        for item in qrels:
+            chunk_id = _normalize_chunk_id(item)
+            if chunk_id in normalized:
+                raise ValueError(f"duplicate chunk_id after normalization: {chunk_id}")
+            normalized[chunk_id] = 1
+        return normalized
+    if not isinstance(qrels, dict):
+        raise TypeError(f"qrels type not supported: {type(qrels).__name__}")
+
+    normalized: dict[str, int] = {}
+    for chunk_id_raw, grade_raw in qrels.items():
+        chunk_id = _normalize_chunk_id(chunk_id_raw)
+        if chunk_id in normalized:
+            raise ValueError(f"duplicate chunk_id after normalization: {chunk_id}")
+        normalized[chunk_id] = _normalize_grade(grade_raw)
+    return normalized
+
+
+def normalize_case_qrels(case: dict[str, Any]) -> tuple[dict[str, int], bool]:
+    """Return the normalized qrels when a case is reviewed; otherwise empty qrels."""
+    status = str(case.get("label_status") or "").strip().lower()
+    if status != "reviewed":
+        return {}, False
+    return normalize_qrels(case.get("relevant_chunk_ids", {})), True
+
+
 def metrics(retrieved_ids: list[str], qrels: dict[str, int], k: int) -> dict[str, float]:
     """Calculate P@k, Recall@k, MRR@k and graded nDCG@k from reviewed relevance labels."""
     if k < 1:
         raise ValueError("k must be >= 1")
-    top = retrieved_ids[:k]
-    rels = [int(qrels.get(cid, 0)) for cid in top]
+    normalized_qrels = normalize_qrels(qrels)
+    if not normalized_qrels:
+        return {
+            f"precision@{k}": 0.0,
+            f"recall@{k}": 0.0,
+            f"mrr@{k}": 0.0,
+            f"ndcg@{k}": 0.0,
+        }
+
+    normalized_hits: list[str] = []
+    for raw_id in retrieved_ids:
+        normalized_hits.append(_normalize_chunk_id(raw_id))
+    top = normalized_hits[:k]
+    rels = [int(normalized_qrels.get(cid, 0)) for cid in top]
     hits = sum(1 for r in rels if r > 0)
-    total_relevant = sum(1 for r in qrels.values() if r > 0)
+    total_relevant = sum(1 for r in normalized_qrels.values() if r > 0)
     reciprocal_rank = 0.0
     for idx, relevance in enumerate(rels, start=1):
         if relevance > 0:
@@ -31,7 +107,7 @@ def metrics(retrieved_ids: list[str], qrels: dict[str, int], k: int) -> dict[str
             break
     import math
     dcg = sum((2**r - 1) / math.log2(i + 2) for i, r in enumerate(rels))
-    ideal = sorted([int(v) for v in qrels.values()], reverse=True)[:k]
+    ideal = sorted([int(v) for v in normalized_qrels.values()], reverse=True)[:k]
     idcg = sum((2**r - 1) / math.log2(i + 2) for i, r in enumerate(ideal))
     return {
         f"precision@{k}": hits / k,
@@ -56,17 +132,18 @@ def main() -> int:
         "run_at_utc": datetime.now(timezone.utc).isoformat(),
         "model": MODEL_ID,
         "k": args.k,
-        "label_policy": "Only manually reviewed relevant_chunk_ids count toward metrics; no labels means metrics are withheld.",
+        "label_policy": "Only manually reviewed relevant_chunk_ids count toward metrics; unreviewed or empty qrels are withheld.",
         "cases": [],
     }
     rows_for_csv = []
     per_method_metrics: dict[str, list[dict[str, float]]] = {"keyword": [], "semantic": []}
+    reviewed_case_count = 0
     for case in cases:
         query_id = case["query_id"]
         query = case["query"]
-        gold = case.get("relevant_chunk_ids", {})
-        if isinstance(gold, list):
-            gold = {str(chunk_id): 1 for chunk_id in gold}
+        gold, is_reviewed = normalize_case_qrels(case)
+        if is_reviewed:
+            reviewed_case_count += 1
         keyword = client.rpc("rag_worker_match_keyword", {
             "p_query_text": query, "p_match_count": args.k, "p_min_rank": 0,
         }) or []
@@ -80,8 +157,9 @@ def main() -> int:
         case_out: dict[str, Any] = {
             "query_id": query_id,
             "query": query,
+            "label_status": case.get("label_status"),
             "gold_label_count": len(gold),
-            "status": "scored" if gold else "needs_human_qrels",
+            "status": "needs_human_qrels" if is_reviewed and not gold else "needs_human_review" if not is_reviewed else "scored",
             "results": {},
         }
         for method, results in (("keyword", keyword), ("semantic", semantic)):
@@ -102,7 +180,7 @@ def main() -> int:
                 normalized.append(item)
                 rows_for_csv.append({"query_id": query_id, "method": method, **item})
             case_out["results"][method] = normalized
-            if gold:
+            if is_reviewed and gold:
                 m = metrics([str(r.get("chunk_id")) for r in normalized], gold, args.k)
                 case_out.setdefault("metrics", {})[method] = m
                 per_method_metrics[method].append(m)
@@ -114,9 +192,12 @@ def main() -> int:
             key: sum(m[key] for m in method_metrics) / len(method_metrics)
             for key in method_metrics[0]
         } if method_metrics else None)
-    output["scored_case_count"] = sum(1 for case in cases if case.get("relevant_chunk_ids"))
+    output["scored_case_count"] = sum(1 for case in output["cases"] if case["status"] == "scored")
     output["total_case_count"] = len(cases)
-    output["overall_status"] = "scored" if output["scored_case_count"] == len(cases) else "partial_or_unlabeled"
+    output["reviewed_case_count"] = reviewed_case_count
+    output["overall_status"] = (
+        "scored" if output["scored_case_count"] and output["scored_case_count"] == reviewed_case_count else "partial_or_unlabeled"
+    )
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
