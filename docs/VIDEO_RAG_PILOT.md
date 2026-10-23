@@ -6,7 +6,7 @@
 - `rag.chunks.embedding` is `vector(384)`. The PDF ingestion worker and query evaluator use `intfloat/multilingual-e5-small`.
 - The video worker must use that exact embedding model and the E5 `passage:` prefix. A different model is incompatible even if it also emits 384-dimensional vectors.
 - The video worker now uses append-only generations. It writes a new set of chunks, then switches `metadata.video_rag.active_generation` only when the complete transcript and all embeddings are ready. It does not delete prior chunks.
-- Apply and verify `supabase/migrations/20261023200123_video_rag_model_alignment.sql` through the normal migration process before video ingestion. Until that migration is applied, do not run the worker: live retrieval may not select the new generation or timestamp-grounded snippets.
+- Migration `supabase/migrations/20261023200123_video_rag_model_alignment.sql` is applied to the configured live project (`uktauwysjkseqrnbjwzy`) and was verified in migration history. Read-only checks confirm active-generation filters, E5 semantic-model filtering, valid one-page PDF mapping checks, and service-role-only access to the public retrieval wrappers. For any other project, apply and verify this migration through the normal migration process before video ingestion; do not run the worker before that project's migration is applied.
 
 ## Prerequisites in Codespaces
 
