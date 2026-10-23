@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retrieval benchmark runner; metrics are calculated only for manually labeled qrels."""
+"""Retrieval benchmark runner; metrics are calculated only for manually reviewed qrels."""
 from __future__ import annotations
 
 import argparse
@@ -14,6 +14,29 @@ from dotenv import load_dotenv
 from rag_pipeline import RAGClient, MODEL_ID, load_embedding_model
 
 load_dotenv()
+
+
+def normalize_reviewed_qrels(case: dict[str, Any]) -> dict[str, int]:
+    """Return relevance labels only after explicit human review; otherwise withhold them."""
+    raw = case.get("relevant_chunk_ids", {})
+    label_status = case.get("label_status")
+    if label_status != "reviewed":
+        return {}
+    if isinstance(raw, list):
+        if any(not isinstance(chunk_id, (str, int)) or isinstance(chunk_id, bool)
+               or not str(chunk_id).strip() for chunk_id in raw):
+            raise ValueError("Reviewed relevant_chunk_ids list must contain non-empty chunk IDs")
+        return {str(chunk_id): 1 for chunk_id in raw}
+    if not isinstance(raw, dict):
+        raise ValueError("Reviewed relevant_chunk_ids must be a mapping or list")
+    qrels: dict[str, int] = {}
+    for chunk_id, grade in raw.items():
+        if not isinstance(chunk_id, str) or not chunk_id.strip():
+            raise ValueError("Reviewed qrels keys must be non-empty chunk ID strings")
+        if isinstance(grade, bool) or not isinstance(grade, int) or grade < 0:
+            raise ValueError("Reviewed qrels grades must be non-negative integers")
+        qrels[chunk_id] = grade
+    return qrels
 
 
 def metrics(retrieved_ids: list[str], qrels: dict[str, int], k: int) -> dict[str, float]:
@@ -50,13 +73,15 @@ def main() -> int:
     if args.k < 1:
         parser.error("--k must be >=1")
     cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
+    if not isinstance(cases, list) or not all(isinstance(case, dict) for case in cases):
+        parser.error("--cases must contain a JSON list of case objects")
     client = RAGClient()
     model = load_embedding_model()
     output: dict[str, Any] = {
         "run_at_utc": datetime.now(timezone.utc).isoformat(),
         "model": MODEL_ID,
         "k": args.k,
-        "label_policy": "Only manually reviewed relevant_chunk_ids count toward metrics; no labels means metrics are withheld.",
+        "label_policy": "Only cases with label_status='reviewed' and valid relevant_chunk_ids count toward metrics.",
         "cases": [],
     }
     rows_for_csv = []
@@ -64,9 +89,13 @@ def main() -> int:
     for case in cases:
         query_id = case["query_id"]
         query = case["query"]
-        gold = case.get("relevant_chunk_ids", {})
-        if isinstance(gold, list):
-            gold = {str(chunk_id): 1 for chunk_id in gold}
+        gold = normalize_reviewed_qrels(case)
+        label_status = case.get("label_status", "missing")
+        raw_qrels = case.get("relevant_chunk_ids", {})
+        if label_status != "reviewed" and raw_qrels:
+            case_status = "labels_not_reviewed"
+        else:
+            case_status = "scored" if gold else "needs_human_qrels"
         keyword = client.rpc("rag_worker_match_keyword", {
             "p_query_text": query, "p_match_count": args.k, "p_min_rank": 0,
         }) or []
@@ -80,8 +109,9 @@ def main() -> int:
         case_out: dict[str, Any] = {
             "query_id": query_id,
             "query": query,
+            "label_status": label_status,
             "gold_label_count": len(gold),
-            "status": "scored" if gold else "needs_human_qrels",
+            "status": case_status,
             "results": {},
         }
         for method, results in (("keyword", keyword), ("semantic", semantic)):
@@ -114,7 +144,7 @@ def main() -> int:
             key: sum(m[key] for m in method_metrics) / len(method_metrics)
             for key in method_metrics[0]
         } if method_metrics else None)
-    output["scored_case_count"] = sum(1 for case in cases if case.get("relevant_chunk_ids"))
+    output["scored_case_count"] = sum(1 for case in output["cases"] if case["status"] == "scored")
     output["total_case_count"] = len(cases)
     output["overall_status"] = "scored" if output["scored_case_count"] == len(cases) else "partial_or_unlabeled"
 
