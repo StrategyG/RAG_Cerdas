@@ -86,3 +86,65 @@ def test_failed_extraction_cleans_staging_directory(tmp_path, monkeypatch):
 
     assert not destination.exists()
     assert not list(tmp_path.glob(".out.tmp-*"))
+
+ 
+def test_manifest_lists_extracted_files_only(tmp_path):
+    archive = tmp_path / "valid.tar.gz"
+    destination = tmp_path / "out"
+    make_archive(archive, [("a.txt", "file", "alpha"), ("nested/b.txt", "file", "beta")])
+
+    extract_archive(archive, destination)
+    manifest = destination / "workspace_manifest.txt"
+    assert manifest.is_file()
+    assert manifest.read_text(encoding="utf-8").splitlines() == ["a.txt", "nested/b.txt"]
+
+
+def test_empty_archive_writes_empty_manifest(tmp_path):
+    archive = tmp_path / "empty.tar.gz"
+    destination = tmp_path / "out"
+    make_archive(archive, [])
+
+    count, size = extract_archive(archive, destination)
+    assert count == 0
+    assert size == 0
+    assert (destination / "workspace_manifest.txt").read_text(encoding="utf-8") == ""
+
+
+def test_corrupt_archive_is_rejected(tmp_path):
+    archive = tmp_path / "corrupt.tar.gz"
+    archive.write_bytes(b"not a gzip tar archive")
+    destination = tmp_path / "out"
+
+    with pytest.raises(tarfile.ReadError):
+        extract_archive(archive, destination)
+    assert not destination.exists()
+
+
+def test_missing_destination_parent_is_created(tmp_path):
+    archive = tmp_path / "valid.tar.gz"
+    destination = tmp_path / "not-created-yet" / "out"
+    make_archive(archive, [("safe.txt", "file", "safe")])
+
+    count, size = extract_archive(archive, destination)
+    assert (destination / "safe.txt").read_text(encoding="utf-8") == "safe"
+    assert (destination / "workspace_manifest.txt").is_file()
+    assert count == 1
+    assert size == 4
+
+
+def test_manifest_write_failure_does_not_publish_destination(tmp_path, monkeypatch):
+    archive = tmp_path / "valid.tar.gz"
+    destination = tmp_path / "out"
+    make_archive(archive, [("safe.txt", "file", "safe")])
+    original = Path.write_text
+
+    def fail_manifest(self, *args, **kwargs):
+        if self.name == "workspace_manifest.txt":
+            raise OSError("simulated manifest write failure")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_manifest)
+    with pytest.raises(OSError, match="simulated manifest write failure"):
+        extract_archive(archive, destination)
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".out.tmp-*"))
