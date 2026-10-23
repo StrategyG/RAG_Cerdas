@@ -14,6 +14,7 @@ import math
 import os
 import tempfile
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -74,7 +75,7 @@ def split_segments(
     if max_words < 20 or overlap_words < 0 or overlap_words >= max_words:
         raise ValueError("Require max_words >= 20 and 0 <= overlap_words < max_words")
 
-    units: list[tuple[str, float, float]] = []
+    units: list[tuple[str, float, float, str]] = []
     for segment in segments:
         segment_start = float(getattr(segment, "start", 0.0) or 0.0)
         segment_end = float(getattr(segment, "end", segment_start) or segment_start)
@@ -88,11 +89,12 @@ def split_segments(
                 end = getattr(word, "end", None)
                 word_start = segment_start if start is None else float(start)
                 word_end = segment_end if end is None else float(end)
-                units.append((token, max(0.0, word_start), max(word_start, word_end)))
+                precision = "word" if start is not None and end is not None else "segment"
+                units.append((token, max(0.0, word_start), max(word_start, word_end), precision))
         else:
             # Safe fallback for ASR engines that return segment timestamps only.
             for token in str(getattr(segment, "text", "") or "").split():
-                units.append((token, max(0.0, segment_start), max(segment_start, segment_end)))
+                units.append((token, max(0.0, segment_start), max(segment_start, segment_end), "segment"))
 
     chunks: list[dict[str, Any]] = []
     if not units:
@@ -112,6 +114,7 @@ def split_segments(
                 "start_seconds": round(start_seconds, 3),
                 "end_seconds": round(end_seconds, 3),
                 "word_count": len(window),
+                "timestamp_precision": "word" if all(item[3] == "word" for item in window) else "segment",
             })
         if cursor + max_words >= len(units):
             break
@@ -275,6 +278,7 @@ def main() -> None:
                                 "start_timestamp": _timestamp(chunk["start_seconds"]),
                                 "end_timestamp": _timestamp(chunk["end_seconds"]),
                                 "word_count": chunk["word_count"],
+                                "timestamp_precision": chunk["timestamp_precision"],
                                 "language": getattr(info, "language", args.language),
                                 "language_probability": getattr(info, "language_probability", None),
                                 "transcript_engine": f"faster-whisper:{args.model}",
@@ -320,9 +324,7 @@ def main() -> None:
                             "previous_generations_retained": True,
                             "indexed_at": None,
                         }
-                        new_video_metadata["indexed_at"] = __import__("datetime").datetime.now(
-                            __import__("datetime").timezone.utc
-                        ).isoformat()
+                        new_video_metadata["indexed_at"] = datetime.now(timezone.utc).isoformat()
                         current_metadata["media_type"] = "video"
                         current_metadata["video_rag"] = new_video_metadata
                         updated = conn.execute(
