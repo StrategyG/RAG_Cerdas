@@ -38,7 +38,10 @@ UNION ALL
 SELECT 'rag_semantic_zero_vector_smoke',
        count(*)::bigint,
        count(*) FILTER (
-         WHERE page_start IS NULL OR page_start < 1 OR page_end <> page_start
+         WHERE NOT (
+           (page_start IS NOT NULL AND page_start >= 1 AND page_end = page_start)
+           OR text_content ~ E'^\\\\[Video [0-9]{2}:[0-9]{2}:[0-9]{2}(\\\\.[0-9]+)? - [0-9]{2}:[0-9]{2}:[0-9]{2}(\\\\.[0-9]+)?\\\\] '
+         )
        )::bigint,
        count(*) > 0
 FROM semantic_results;
