@@ -322,7 +322,6 @@ def main() -> None:
                         new_video_metadata = {
                             **current_video_metadata,
                             "active_generation": generation,
-                            "generation_count": len(chunks),
                             "transcript_status": "complete",
                             "transcript_engine": f"faster-whisper:{args.model}",
                             "embedding_model": EMBEDDING_MODEL,
