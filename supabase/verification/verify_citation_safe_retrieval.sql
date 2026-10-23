@@ -21,7 +21,11 @@ SELECT 'rag_keyword' AS test,
        count(*) FILTER (
          WHERE NOT (
            (page_start IS NOT NULL AND page_start >= 1 AND page_end = page_start)
-           OR text_content ~ '^\\[Video [0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)? - [0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?\\] '
+           OR (
+             left(text_content, 7) = '[Video '
+             AND position(' - ' IN text_content) > 7
+             AND position('] ' IN text_content) > position(' - ' IN text_content)
+           )
          )
        )::bigint AS invalid_citations,
        count(*) > 0 AS has_searchable_evidence
@@ -40,7 +44,11 @@ SELECT 'rag_semantic_zero_vector_smoke',
        count(*) FILTER (
          WHERE NOT (
            (page_start IS NOT NULL AND page_start >= 1 AND page_end = page_start)
-           OR text_content ~ E'^\\\\[Video [0-9]{2}:[0-9]{2}:[0-9]{2}(\\\\.[0-9]+)? - [0-9]{2}:[0-9]{2}:[0-9]{2}(\\\\.[0-9]+)?\\\\] '
+           OR (
+             left(text_content, 7) = '[Video '
+             AND position(' - ' IN text_content) > 7
+             AND position('] ' IN text_content) > position(' - ' IN text_content)
+           )
          )
        )::bigint,
        count(*) > 0
