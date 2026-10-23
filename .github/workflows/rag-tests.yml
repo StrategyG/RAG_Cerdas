@@ -32,15 +32,18 @@ jobs:
           test -s requirements-test.txt
           test -s scripts/preflight.py
           test -s scripts/supabase_http.py
+          test -s scripts/download_dropbox_pdf_readonly.py
           test -s supabase/migrations/20261018182702_claim_ingest_jobs_only.sql
           test -s supabase/migrations/20261018183310_drop_duplicate_ingest_job_index.sql
           test -s supabase/verification/verify_ingestion_state.sql
+          test -s supabase/verification/diagnose_ingestion_stalls.sql
           test -d tests
           test -s tests/test_page_chunking.py
           test -s tests/test_eval_metrics.py
           test -s tests/test_preflight.py
           test -s tests/test_supabase_http.py
           test -s tests/test_pipeline_dry_run.py
+          test -s tests/test_dropbox_readonly_download.py
 
       - name: Validate Codespaces configuration
         run: |
@@ -64,7 +67,7 @@ jobs:
         run: bash -n .devcontainer/post-create.sh
 
       - name: Compile RAG modules
-        run: python -m py_compile rag_pipeline.py eval_retrieval.py scripts/preflight.py
+        run: python -m py_compile rag_pipeline.py eval_retrieval.py scripts/preflight.py scripts/download_dropbox_pdf_readonly.py
 
       - name: Run unit tests (required)
         run: python -m pytest -q --strict-config --strict-markers tests
