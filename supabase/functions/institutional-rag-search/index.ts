@@ -60,22 +60,34 @@ async function keywordSearch(query: string, limit: number) {
       row && typeof row.chunk_id === "string" &&
       typeof row.document_id === "string" &&
       typeof row.document_name === "string" &&
-      typeof row.text_content === "string" &&
-      Number.isInteger(row.page_start) && row.page_start >= 1 &&
-      Number.isInteger(row.page_end) && row.page_end === row.page_start
+      typeof row.text_content === "string"
     )
-    .map((row) => ({
-      chunk_id: row.chunk_id,
-      document_id: row.document_id,
-      title: row.document_name,
-      source_path: typeof row.source_path === "string" ? row.source_path : null,
-      chunk_index: row.chunk_index,
-      page: row.page_start,
-      citation: `${row.document_name}, p. ${row.page_start}`,
-      relevance_score: Number(row.rank ?? 0),
-      excerpt: row.text_content.slice(0, 4000),
-      content_sha256: typeof row.content_sha256 === "string" ? row.content_sha256 : null,
-    }));
+    .map((row) => {
+      const videoMatch = row.text_content.match(/^\\[Video (\\d{2}:\\d{2}:\\d{2}) - (\\d{2}:\\d{2}:\\d{2})\\]\\s*/);
+      const isPageCitation = Number.isInteger(row.page_start) && row.page_start >= 1 &&
+        Number.isInteger(row.page_end) && row.page_end === row.page_start;
+      const isVideoCitation = Boolean(videoMatch);
+      if (!isPageCitation && !isVideoCitation) return null;
+      const excerpt = isVideoCitation ? row.text_content.slice(videoMatch![0].length) : row.text_content;
+      return {
+        chunk_id: row.chunk_id,
+        document_id: row.document_id,
+        title: row.document_name,
+        source_path: typeof row.source_path === "string" ? row.source_path : null,
+        chunk_index: row.chunk_index,
+        citation_type: isVideoCitation ? "video_timestamp" : "pdf_page",
+        page: isPageCitation ? row.page_start : null,
+        start_timestamp: isVideoCitation ? videoMatch![1] : null,
+        end_timestamp: isVideoCitation ? videoMatch![2] : null,
+        citation: isVideoCitation
+          ? `${row.document_name}, ${videoMatch![1]}–${videoMatch![2]}`
+          : `${row.document_name}, p. ${row.page_start}`,
+        relevance_score: Number(row.rank ?? 0),
+        excerpt: excerpt.slice(0, 4000),
+        content_sha256: typeof row.content_sha256 === "string" ? row.content_sha256 : null,
+      };
+    })
+    .filter((row) => row !== null);
 }
 
 Deno.serve(async (req: Request) => {
