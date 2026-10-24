@@ -1,4 +1,5 @@
 -- Extend keyword retrieval to timestamp-cited Dropbox videos while retaining page-cited PDF rules.
+-- Match the live generated search_vector configuration (to_tsvector('english', ...)) so the query uses the same tokenization.
 -- Additive function-body update only; no source/chunk rows are deleted or rewritten.
 CREATE OR REPLACE FUNCTION rag.match_chunks_keyword(
   query_text text,
@@ -22,7 +23,7 @@ STABLE
 SET search_path TO ''
 AS $function$
   WITH q AS (
-    SELECT pg_catalog.plainto_tsquery('pg_catalog.simple'::pg_catalog.regconfig, query_text) AS tsq
+    SELECT pg_catalog.plainto_tsquery('pg_catalog.english'::pg_catalog.regconfig, query_text) AS tsq
   )
   SELECT
     c.id AS chunk_id,
