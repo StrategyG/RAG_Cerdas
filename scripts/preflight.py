@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Validate required secrets and test read-only Supabase/Dropbox connectivity without printing secrets."""
+"""Validate required secrets and test read-only Supabase/Dropbox connectivity.
+
+This is a safe pilot gate, not a production readiness declaration. The goal is to
+confirm that the environment is structurally valid and can reach required external
+services without printing or exposing secrets before any live ingestion, migration,
+or deployment is attempted.
+"""
 from __future__ import annotations
 
 import json
@@ -73,7 +79,8 @@ def check_dropbox() -> tuple[bool, str]:
 def main() -> int:
     required = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY")
     missing = [name for name in required if not configured(name)]
-    print("Institutional RAG preflight (no database writes)")
+    print("Institutional RAG pilot gate (read-only; safe pilot only)")
+    print("This is not a production readiness declaration.")
     for name in required:
         print(f"{name}: {'set' if configured(name) else 'missing or placeholder'}")
     print(f"DROPBOX_ACCESS_TOKEN: {'set' if configured('DROPBOX_ACCESS_TOKEN') else 'not set (optional)'}")
@@ -82,7 +89,8 @@ def main() -> int:
     print(f"PDF directory: {pdf_dir} ({len(local_pdfs)} PDF file(s))")
 
     if missing:
-        print("STATUS: BLOCKED — add real values as Codespaces Secrets, then restart the Codespace.")
+        print("STATUS: BLOCKED — add real values as Codespaces Secrets or a local .env file, then restart the environment.")
+        print("NEXT: do not attempt ingestion, migration, or deployment until the required secrets are valid and reviewed.")
         return 2
 
     supabase_ok, supabase_detail = check_supabase()
@@ -97,13 +105,16 @@ def main() -> int:
     else:
         print(f"Dropbox connectivity: {dropbox_detail}")
     if not dropbox_ok:
-        print("STATUS: BLOCKED — correct Dropbox token scope/path before ingestion.")
+        print("STATUS: BLOCKED — correct Dropbox token scope and path before any live PDF pilot.")
         return 4
+
     if not local_pdfs and not configured("DROPBOX_ACCESS_TOKEN"):
-        print("STATUS: DATABASE OK, BUT NO SOURCE PDFs FOUND.")
+        print("STATUS: BLOCKED — database reachable, but no source PDFs are configured. Add a local PDF or Dropbox access before a pilot.")
         return 1
 
-    print("STATUS: CONNECTIVITY CHECKS PASSED. Ingestion has not been run.")
+    print("STATUS: SAFE PILOT READY")
+    print("Human approval is still required before any live ingestion, migration, bulk indexing, or production deployment.")
+    print("Production readiness is not declared by this check alone; it requires retrieval evaluation, citation validation, and operational review.")
     return 0
 
 
