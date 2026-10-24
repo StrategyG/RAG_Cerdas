@@ -5,6 +5,21 @@ const source = readFileSync("supabase/functions/institutional-rag-search/index.t
 const literalMatch = source.match(/const VIDEO_CITATION_RE = (\/(?:\\.|[^/])*\/[a-z]*);/);
 assert.ok(literalMatch, "Edge Function must define the video citation regex as a regex literal");
 
+assert.ok(source.includes("function timestampToSeconds(value: string): number"), "Edge Function must parse timestamps numerically");
+assert.ok(
+  source.includes("timestampToSeconds(videoMatch[2]) > timestampToSeconds(videoMatch[1])"),
+  "Edge Function must reject video citations whose end timestamp is not after start"
+);
+
+function timestampToSeconds(value) {
+  const match = value.match(/^(\\d{2,}):([0-5]\\d):([0-5]\\d)$/);
+  if (!match) return Number.NaN;
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+}
+assert.ok(timestampToSeconds("00:03:04") > timestampToSeconds("00:01:02"));
+assert.ok(!(timestampToSeconds("00:01:02") > timestampToSeconds("00:01:02")));
+assert.ok(!(timestampToSeconds("00:00:59") > timestampToSeconds("00:01:00")));
+
 const literal = literalMatch[1];
 const finalSlash = literal.lastIndexOf("/");
 const regex = new RegExp(literal.slice(1, finalSlash), literal.slice(finalSlash + 1));
