@@ -22,7 +22,7 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 // Must match the citation marker emitted by rag.match_chunks_keyword.
-const VIDEO_CITATION_RE = /^\[Video (\d{2}:\d{2}:\d{2}) - (\d{2}:\d{2}:\d{2})\]\s*/;
+const VIDEO_CITATION_RE = /^\[Video (\d{2,}:[0-5]\d:[0-5]\d) - (\d{2,}:[0-5]\d:[0-5]\d)\]\s*/;
 
 function authenticate(req: Request): boolean {
   const expected = Deno.env.get("RAG_CHATGPT_API_KEY") ?? "";
