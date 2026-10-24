@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,7 @@ from faster_whisper import WhisperModel
 from sentence_transformers import SentenceTransformer
 
 DROPBOX_DOWNLOAD_URL = "https://content.dropboxapi.com/2/files/download"
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "small")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
@@ -115,7 +116,147 @@ def main() -> None:
             SELECT id::text, source_name, source_path, metadata
             FROM rag.documents
             WHERE source_provider = 'dropbox'
-              AND mime_type = 'video/mp4'
+              AND (mime_type LIKE 'video/%' OR lower(source_name) ~ '\\.(mp4|mov|m4v|webm|mkv|avi)
+            ORDER BY source_name
+            LIMIT %s
+            """,
+            (args.limit,),
+        ).fetchall()
+
+        if not rows:
+            print("No unprocessed Dropbox MP4 records found.")
+            return
+
+        for document_id, source_name, source_path, metadata in rows:
+            metadata = metadata or {}
+            dropbox_id = metadata.get("dropbox_id")
+            if not dropbox_id:
+                print(f"SKIP {source_name}: metadata.dropbox_id missing")
+                continue
+
+            print(f"Processing: {source_name}")
+            conn.execute(
+                "UPDATE rag.documents SET ingest_status='processing', ingest_error=NULL, updated_at=now() WHERE id=%s",
+                (document_id,),
+            )
+            conn.commit()
+            try:
+                with tempfile.TemporaryDirectory(prefix="video-rag-") as tmp:
+                    video_path = Path(tmp) / "source.mp4"
+                    download_video(dropbox_token, dropbox_id, video_path)
+                    digest = sha256_file(video_path)
+                    segments_iter, info = speech_model.transcribe(
+                        str(video_path),
+                        language=None if args.language == "auto" else args.language,
+                        vad_filter=True,
+                        word_timestamps=False,
+                    )
+                    transcript_segments = list(segments_iter)
+                    chunks = split_segments(transcript_segments)
+                    if not chunks:
+                        raise RuntimeError("Transcription produced no non-empty text chunks.")
+
+                    vectors = embedding_model.encode(
+                        ["passage: " + chunk["text"] for chunk in chunks],
+                        normalize_embeddings=True,
+                        show_progress_bar=False,
+                        convert_to_numpy=True,
+                    )
+                    if vectors.ndim != 2 or vectors.shape != (len(chunks), 384):
+                        raise RuntimeError("Embedding output must be a finite N x 384 matrix.")
+                    import numpy as np
+                    if not np.isfinite(vectors).all():
+                        raise RuntimeError("Embedding output contains NaN or infinite values.")
+
+                    generation_id = str(uuid.uuid4())
+                    with conn.transaction():
+                        # Append a new generation. Keep all previous chunks for rollback/audit.
+                        chunk_base = conn.execute(
+                            "SELECT COALESCE(MAX(chunk_index), -1) + 1 FROM rag.chunks WHERE document_id=%s",
+                            (document_id,),
+                        ).fetchone()[0]
+                        for index, (chunk, vector) in enumerate(zip(chunks, vectors), start=int(chunk_base)):
+                            vector_literal = "[" + ",".join(f"{float(v):.8f}" for v in vector) + "]"
+                            chunk_hash = hashlib.sha256(chunk["text"].encode("utf-8")).hexdigest()
+                            conn.execute(
+                                """
+                                INSERT INTO rag.chunks
+                                  (document_id, chunk_index, text_content, token_count,
+                                   content_sha256, metadata, embedding, embedding_model, embedded_at)
+                                VALUES
+                                  (%s, %s, %s, %s, %s, %s::jsonb, %s::vector, %s, now())
+                                """,
+                                (
+                                    document_id,
+                                    index,
+                                    chunk["text"],
+                                    len(chunk["text"].split()),
+                                    chunk_hash,
+                                    json.dumps({
+                                        "source_type": "video",
+                                        "source_name": source_name,
+                                        "ingest_generation": generation_id,
+                                        "chunking_version": "timestamped-video-v1",
+                                        "start_seconds": chunk["start_seconds"],
+                                        "end_seconds": chunk["end_seconds"],
+                                        "start_timestamp": _timestamp(chunk["start_seconds"]),
+                                        "end_timestamp": _timestamp(chunk["end_seconds"]),
+                                        "language": getattr(info, "language", args.language),
+                                        "transcript_engine": f"faster-whisper:{args.model}",
+                                    }),
+                                    vector_literal,
+                                    EMBEDDING_MODEL,
+                                ),
+                            )
+                        new_metadata = {
+                            **metadata,
+                            "media_type": "video",
+                            "pipeline_stage": "transcribed_embedded",
+                            "transcript_status": "complete",
+                            "transcript_engine": f"faster-whisper:{args.model}",
+                            "embedding_model": EMBEDDING_MODEL,
+                            "transcript_chunk_count": len(chunks),
+                            "duration_seconds": getattr(info, "duration", None),
+                            "source_sha256": digest,
+                            "page_aware_ingest": {
+                                **(metadata.get("page_aware_ingest") or {}),
+                                "version": 1,
+                                "active_generation": generation_id,
+                                "page_mapping": "timestamped_video",
+                                "chunk_count": len(chunks),
+                                "content_sha256": digest,
+                                "indexed_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+                            },
+                        }
+                        conn.execute(
+                            """
+                            UPDATE rag.documents
+                            SET ingest_status='indexed', ingest_error=NULL, content_sha256=%s,
+                                metadata=%s::jsonb, indexed_at=now(), updated_at=now()
+                            WHERE id=%s
+                            """,
+                            (digest, json.dumps(new_metadata), document_id),
+                        )
+                print(f"INDEXED {source_name}: generation={generation_id}, {len(chunks)} chunks; SHA-256={digest}")
+            except Exception as exc:
+                conn.execute(
+                    "UPDATE rag.documents SET ingest_status='failed', ingest_error=%s, updated_at=now() WHERE id=%s",
+                    (f"{type(exc).__name__}: {str(exc)[:1500]}", document_id),
+                )
+                conn.commit()
+                print(f"FAILED {source_name}: {type(exc).__name__}: {exc}")
+
+
+def _timestamp(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+if __name__ == "__main__":
+    main()
+)
               AND ingest_status IN ('discovered', 'failed')
             ORDER BY source_name
             LIMIT %s
