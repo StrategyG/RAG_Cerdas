@@ -322,3 +322,30 @@ def test_database_rejects_fabricated_unit_quotes_and_worker_source_reconfigurati
         assert not conn.execute(
             "SELECT has_table_privilege(current_user,'im19.chunks','UPDATE') AS p"
         ).fetchone()["p"]
+
+
+def test_extraction_replay_cannot_mix_changed_text_with_prior_checkpoint(database):
+    from im19.contracts import PipelineError
+
+    doc, _ = discover(database)
+    job = database.claim("worker")
+    page = Page("pdf:page:1", "Original extracted text", 1)
+    c = Chunk(str(uuid4()), doc, page.locator, page.text, 1, 1, digest(page.text))
+    database.save_extraction(job, [page], [c])
+    database.save_extraction(job, [page], [c])
+    changed = Page("pdf:page:1", "Changed OCR output", 1)
+    with pytest.raises(PipelineError, match="EXTRACTION_REPLAY_MISMATCH"):
+        database.save_extraction(job, [changed], [])
+    assert database.extraction(doc)[0][0].text == page.text
+
+
+def test_database_rejects_chunk_content_absent_from_its_page(database):
+    doc, _ = discover(database)
+    job = database.claim("worker")
+    page = Page("pdf:page:1", "Source text", 1)
+    invented = Chunk(
+        str(uuid4()), doc, page.locator, "Invented text", 1, 1, digest("Invented text")
+    )
+    with pytest.raises(psycopg.errors.RaiseException, match="chunk page provenance"):
+        database.save_extraction(job, [page], [invented])
+    assert not database.extraction(doc)[0]  # Whole extraction transaction rolls back.

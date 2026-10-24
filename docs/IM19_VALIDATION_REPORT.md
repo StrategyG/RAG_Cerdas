@@ -5,12 +5,13 @@
 ## Actual local evidence
 
 - Baseline current-main suite: **100 passed in 0.34s** before modification.
-- Expanded suite: **159 passed, 16 skipped** on Python 3.12. The 16 skipped cases are PostgreSQL/pgvector integration tests: this execution environment maps only UID 0 and PostgreSQL refuses root. Tests explicitly report that limitation; mocks are not counted as database verification.
+- Expanded suite: **159 passed, 18 skipped** on Python 3.12. The 18 skipped cases are PostgreSQL/pgvector integration tests: this execution environment maps only UID 0 and PostgreSQL refuses root. Tests explicitly report that limitation; mocks are not counted as database verification.
 - Python compilation, undefined-name/import checks (Ruff F rules), Git whitespace check and top-level SQL/PLpgSQL parsing passed. Parsing is not migration execution.
 - Real PyMuPDF PDF/EPUB parsing and a synthetic scan through installed Tesseract were executed. Scan OCR recognized the expected text with a recorded confidence above the fixture threshold. This is not an OCR corpus accuracy benchmark.
 - OAuth refresh/expiry/revocation, pagination, rate limits, hashes, prompt schemas, provenance, classification ambiguity, publication holds, state progression and legacy local-vs-Dropbox preflight were tested with deterministic provider/model fixtures.
 - Initial CI run [40130182922](https://github.com/StrategyG/RAG_Cerdas/actions/runs/40130182922) on `b39f7c9` executed the real database tests: **170 passed, 1 failed**. The failure was an incorrect expected table count in a test, corrected to an explicit set of all 17 required entities. Additional hardening fences superseded jobs and fingerprints local embedding files; rerun the updated head before accepting it.
-- GitHub CI is configured to run the expanded suite, including a disposable PostgreSQL/pgvector cluster and actual SQL transactions. Its latest outcome must be checked on this PR before merge. No CI success is asserted in this pre-PR record.
+- CI run [40130458378](https://github.com/StrategyG/RAG_Cerdas/actions/runs/40130458378) on code commit `c2a4d744171b99dea16a8d674da978e779b20430` passed **175 tests in 4.85s** with no skips. It executed a disposable PostgreSQL/pgvector cluster, migration, actual transactions/concurrency/RLS, separate approvals/publication, embedding read-back, retrieval and citations. AI/vector provider fixtures were deterministic; this is not a live Qwen/E5 or Supabase result.
+- The final patch adds extraction-replay consistency and database chunk-to-page provenance gates with two further database regressions. Check the final-head CI outcome before merge. No production service or deployment was touched.
 
 ## Feature delivery status
 
@@ -31,12 +32,12 @@ Statuses are scoped: TESTED below means the stated local tests, never live provi
 | Five logical reviewer roles/rubric | TESTED | Role coverage, schema, corruption, unknown scores and verification status fixtures; local Qwen run BLOCKED |
 | Fact verification | IMPLEMENTED | Source attribution and same-concept comparison inputs; external evidence acquisition/adjudication BLOCKED; never marks model output VERIFIED |
 | Contradiction candidates | TESTED | Direct/context/definition/method/period labels and pending edges; real contradiction precision BLOCKED |
-| Knowledge graph | IMPLEMENTED | Nodes and evidence-bound edges persisted by code; author enrichment PARTIAL; full DB flow pending CI |
-| Private migration/RLS/publication gates | IMPLEMENTED | Additive migration parsed; runtime database tests queued for CI; target Supabase BLOCKED |
-| BM25+dense+RRF retrieval | TESTED | BM25/RRF/vector validation local tests; SQL retrieval/citations require database CI + corpus evaluation |
+| Knowledge graph | TESTED | Nodes/attribution edges persisted in real database pipeline test; author enrichment PARTIAL and graph quality not measured |
+| Private migration/RLS/publication gates | VERIFIED | Additive migration executed in isolated PostgreSQL/pgvector CI; worker privileges/publication checks passed; target Supabase BLOCKED |
+| BM25+dense+RRF retrieval | TESTED | BM25/RRF and actual SQL retrieval/citations pass synthetic database fixture; actual encoder and corpus quality BLOCKED |
 | Metadata/page/review filters | IMPLEMENTED | Parameterized SQL filters; author/credibility often unavailable and must not be invented |
 | Optional reranker/graph expansion | IMPLEMENTED | Injectable reranker, reviewed edges only; model quality/performance NOT VERIFIED |
-| Durable worker/checkpoints/leases/DLQ | IMPLEMENTED | Unit state tests pass; transactional fencing/replay/concurrent claims require PostgreSQL CI |
+| Durable worker/checkpoints/leases/DLQ | TESTED | Real database concurrent claims, fencing, stage recovery, supersession, dead-letter and approval resume passed; endurance/outage target pilot BLOCKED |
 | Colab pilot | IMPLEMENTED | Valid notebook, unexecuted; not a 24/7 runtime |
 | Deployment configuration | IMPLEMENTED | Container/compose example; image build and target deployment BLOCKED |
 | Retention policy | IMPLEMENTED | Written conservative pilot policy; timed disposal automation NOT_IMPLEMENTED pending owner policy |
@@ -68,7 +69,7 @@ No before/after performance improvement, readiness score or corpus quality perce
 | B Data integrity | PARTIAL | Local contracts pass; target source version/hash/provenance and DB read-back pilot |
 | C Knowledge quality | BLOCKED | Calibrated rubric/risk thresholds, human-reviewed extraction/mining/review benchmark |
 | D Retrieval | BLOCKED | Corpus Recall@5/MRR, page/EPUB citation accuracy and abstention evaluation |
-| E Reliability | PARTIAL | CI DB leases/recovery tests plus real target network outage/kill/restart and bounded resource pilot |
+| E Reliability | PARTIAL | Real target network outage/kill/restart and bounded resource pilot |
 | F Production release | BLOCKED | Reviewed migration/backup/staging, built image, monitoring/alerts, restore/rollback rehearsal, endurance test and release approval |
 
 All six must pass before a production-ready declaration. This branch intentionally provides reviewable code, migrations and evidence boundaries without applying production changes.

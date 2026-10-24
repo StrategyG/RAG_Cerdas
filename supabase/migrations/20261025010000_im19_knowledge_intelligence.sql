@@ -55,7 +55,8 @@ CREATE TABLE im19.chunks (
  id uuid PRIMARY KEY, document_id uuid NOT NULL, locator text NOT NULL, text_content text NOT NULL,
  page_start int, page_end int, content_hash text NOT NULL,
  FOREIGN KEY(document_id,locator) REFERENCES im19.document_pages(document_id,locator),
- CHECK ((page_start>0 AND page_end=page_start) OR (page_start IS NULL AND page_end IS NULL AND locator LIKE 'epub:%'))
+ CHECK ((page_start IS NOT NULL AND page_start>0 AND page_end IS NOT NULL AND page_end=page_start AND locator='pdf:page:'||page_start::text)
+   OR (page_start IS NULL AND page_end IS NULL AND locator LIKE 'epub:spine:%'))
 );
 CREATE INDEX ON im19.chunks(document_id);
 CREATE INDEX ON im19.chunks(content_hash);
@@ -143,6 +144,19 @@ BEGIN RAISE EXCEPTION 'append-only record'; END $$;
 CREATE TRIGGER audit_immutable BEFORE UPDATE OR DELETE ON im19.audit_events FOR EACH ROW EXECUTE FUNCTION im19.immutable_record();
 CREATE TRIGGER approvals_immutable BEFORE UPDATE OR DELETE ON im19.human_approvals FOR EACH ROW EXECUTE FUNCTION im19.immutable_record();
 CREATE TRIGGER reviews_immutable BEFORE UPDATE OR DELETE ON im19.review_runs FOR EACH ROW EXECUTE FUNCTION im19.immutable_record();
+
+CREATE FUNCTION im19.chunk_provenance_gate() RETURNS trigger LANGUAGE plpgsql SET search_path='' AS $$
+DECLARE source im19.document_pages%ROWTYPE;
+BEGIN
+ SELECT * INTO source FROM im19.document_pages WHERE document_id=NEW.document_id AND locator=NEW.locator;
+ IF source.document_id IS NULL OR length(trim(NEW.text_content))=0
+   OR position(NEW.text_content in source.text_content)=0
+   OR source.page_number IS DISTINCT FROM NEW.page_start THEN
+   RAISE EXCEPTION 'chunk page provenance mismatch';
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER chunk_provenance BEFORE INSERT OR UPDATE ON im19.chunks FOR EACH ROW EXECUTE FUNCTION im19.chunk_provenance_gate();
 
 -- Model/source provenance must hold even for direct SQL inserts.
 CREATE FUNCTION im19.unit_provenance_gate() RETURNS trigger LANGUAGE plpgsql SET search_path='' AS $$

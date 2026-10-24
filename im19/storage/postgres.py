@@ -276,6 +276,18 @@ class PostgresStore:
                         Jsonb(page.warnings),
                     ),
                 )
+            # A replay must agree with immutable extraction output already committed.
+            persisted_pages = conn.execute(
+                "SELECT locator,content_hash,page_number FROM im19.document_pages WHERE document_id=%s",
+                (job["document_id"],),
+            ).fetchall()
+            actual = {
+                p["locator"]: (p["content_hash"], p["page_number"])
+                for p in persisted_pages
+            }
+            expected = {p.locator: (digest(p.text), p.page_number) for p in pages}
+            if actual != expected:
+                raise PipelineError("QUARANTINED", "EXTRACTION_REPLAY_MISMATCH")
             for c in chunks:
                 conn.execute(
                     "INSERT INTO im19.chunks VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
