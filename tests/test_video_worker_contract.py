@@ -12,7 +12,7 @@ def test_video_worker_never_deletes_previous_chunks():
     source = Path("scripts/video_rag_worker.py").read_text(encoding="utf-8")
     assert "DELETE FROM rag.chunks" not in source
     assert "Append a new generation" in source
-    assert '"ingest_generation": generation_id' in source
+    assert '"video_generation": generation_id' in source
     assert '"active_generation": generation_id' in source
 
 
