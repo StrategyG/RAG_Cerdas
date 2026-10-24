@@ -4,8 +4,8 @@
 
 | Gate | Acceptance criteria | Evidence required | Current status (2026-10-24) |
 |---|---|---|---|
-| G1 Repository integrity | Reviewed working branch; current PR head and commit known; no secret material committed | GitHub commit/PR metadata, secret scan | NOT TESTED for current head |
-| G2 Automated tests | Full required suite passes on the exact candidate SHA; no tests removed or weakened to hide failures | Workflow URL, exact SHA, test counts and logs | NOT TESTED for current head |
+| G1 Repository integrity | Reviewed working branch; candidate commit known; no secret material committed | GitHub commit/PR metadata; no secret-scan result yet | PARTIAL: commit `0cd1ea3bcf5150933c6672452b11dabfbd2d9eca` identified; dedicated secret scan not run |
+| G2 Automated tests | Full required suite passes on the exact candidate SHA; no tests removed or weakened to hide failures | Workflow URL, exact SHA, test counts and logs | PASS for `0cd1ea3bcf5150933c6672452b11dabfbd2d9eca`: [workflow #40094400731](https://github.com/StrategyG/RAG_Cerdas/actions/runs/40094400731), 110 pytest tests passed; compile, citation regex, and evaluation schema checks passed. Re-run required for later commits. |
 | G3 Schema contract | Canonical schema selected; all worker SQL, RPC signatures, return types, grants, indexes, and migrations match live schema | Read-only schema/function audit and migration review | FAIL: dual schema tracks require explicit reconciliation |
 | G4 Corpus integrity | Every active chunk has non-empty text, source hash/provenance, valid page/time data, compatible finite embeddings, and a valid generation | Read-only integrity report | FAIL: observed 25,343 `rag.chunks` embeddings NULL and page provenance absent; 5 institutional chunks embeddings NULL |
 | G5 PDF pilot | One authorized PDF passes download, page-preserving extraction, chunking, embedding, generation activation, retrieval, correct citation, retry/idempotency, and no-evidence tests | Pilot manifest, hashes, counts, query outputs, verified source pages | NOT TESTED |
