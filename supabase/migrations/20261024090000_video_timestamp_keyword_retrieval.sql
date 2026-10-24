@@ -50,25 +50,24 @@ AS $function$
         d.mime_type LIKE 'video/%'
         AND NULLIF(d.metadata->'video_rag'->>'active_generation', '') IS NOT NULL
         AND c.metadata->>'video_generation' = d.metadata->'video_rag'->>'active_generation'
-        AND NULLIF(c.metadata->>'start_timestamp', '') IS NOT NULL
-        AND NULLIF(c.metadata->>'end_timestamp', '') IS NOT NULL
+        AND c.metadata->>'start_timestamp' ~ '^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$'
+        AND c.metadata->>'end_timestamp' ~ '^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]$'
       )
       OR
       (
-        d.mime_type IS DISTINCT FROM 'video/mp4'
-        AND d.mime_type NOT LIKE 'video/%'
+        COALESCE(d.mime_type, '') NOT LIKE 'video/%'
         AND (
           (
             NULLIF(d.metadata->'page_aware_ingest'->>'active_generation', '') IS NOT NULL
             AND c.metadata->>'ingest_generation' = d.metadata->'page_aware_ingest'->>'active_generation'
-            AND c.page_start IS NOT NULL
+            AND c.page_start >= 1
             AND c.page_end = c.page_start
           )
           OR
           (
             NULLIF(d.metadata->'page_aware_ingest'->>'active_generation', '') IS NULL
             AND c.metadata->>'ingest_generation' IS NULL
-            AND c.page_start IS NOT NULL
+            AND c.page_start >= 1
             AND c.page_end = c.page_start
           )
         )
