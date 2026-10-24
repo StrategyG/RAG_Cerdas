@@ -25,8 +25,14 @@ REQUIRED_FILES = (
     "docs/INSTITUTIONAL_RAG_RELEASE_GATES.md",
     "tests",
 )
+# These gates require evidence beyond CI. CI only proves the checks actually run
+# by the workflow; it cannot establish correctness of live ingestion/retrieval.
 REQUIRED_GATES = (
     "exact_commit_ci_passed",
+    "source_validation_passed",
+    "ingestion_idempotency_passed",
+    "page_timestamp_correctness_passed",
+    "retrieval_quality_and_citation_accuracy_passed",
     "canonical_schema_and_rpc_reviewed",
     "security_and_auth_reviewed",
     "backup_and_rollback_verified",
@@ -38,6 +44,8 @@ REQUIRED_GATES = (
     "abstention_tests_passed",
     "source_preservation_verified",
     "operations_recovery_verified",
+    "human_review_signed_off",
+    "approved_deployment_authorization",
 )
 
 
@@ -109,6 +117,7 @@ def main() -> int:
 
     failures: list[str] = []
     print("Institutional RAG production gate — READ-ONLY / FAIL-CLOSED")
+    print("CI is necessary but insufficient; live data, quality, recovery, human review, and deployment approval need separate evidence.")
     print(f"Repository root: {ROOT}")
 
     for relative in REQUIRED_FILES:
