@@ -25,7 +25,7 @@ function constantTimeEqual(a: string, b: string): boolean {
 const VIDEO_CITATION_RE = /^\[Video (\d{2,}:[0-5]\d:[0-5]\d) - (\d{2,}:[0-5]\d:[0-5]\d)\]\s*/;
 
 function timestampToSeconds(value: string): number {
-  const match = value.match(/^(\\d{2,}):([0-5]\\d):([0-5]\\d)$/);
+  const match = value.match(/^(\d{2,}):([0-5]\d):([0-5]\d)$/);
   if (!match) return Number.NaN;
   return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
 }
