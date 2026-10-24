@@ -1,6 +1,6 @@
 # Institutional RAG — Production Ready Checklist
 
-**Default decision: NO-GO for production.** Keep the current PR in draft and run only bounded, explicitly authorized pilots until every critical gate has reproducible evidence.
+**Default decision: NO-GO for production.** CI is necessary but insufficient: it proves only the checks actually run by the workflow. Production readiness also requires reproducible operational evidence, retrieval/citation quality, human review, and explicit deployment approval. Keep the PR in draft and run only bounded, explicitly authorized pilots until every critical gate has reproducible evidence.
 
 ## 1. Change and environment record
 
@@ -90,7 +90,21 @@ These are project acceptance thresholds, not claims that the current RAG meets t
 - [ ] Usage limits, timeout and payload limits tested.
 - [ ] A documented operator can stop a run safely and explain recovery steps.
 
-## 8. Evidence manifest and final decision
+## 8. Required release evidence beyond CI
+
+CI may establish that the exact commit compiles and its configured automated tests pass. It does **not** prove these operational gates:
+
+- [ ] **Source validation:** one authorized PDF and one authorized video have verified identity, integrity, file bounds, and readable/processable content.
+- [ ] **Ingestion idempotency:** repeated runs produce no duplicate active chunks; interrupted runs cannot activate partial generations.
+- [ ] **Page/timestamp correctness:** human-reviewed PDF citations match original 1-based pages; video timestamps match the source media and satisfy start < end <= duration.
+- [ ] **Retrieval quality and citation accuracy:** a versioned, human-reviewed evaluation set passes the approved retrieval, grounding, citation, and abstention thresholds.
+- [ ] **Approved deployment:** named owner has approved the exact candidate SHA and target environment after reviewing migration and Edge Function diffs.
+- [ ] **Backup/rollback:** restore and rollback were rehearsed in a safe environment and evidence is attached.
+- [ ] **Human review:** reviewer signs off source extraction, representative retrievals, citations, and failure/abstention cases.
+
+A gate must remain BLOCKED when evidence is missing. Do not treat a green CI badge, code presence, or a manually set boolean as proof by itself. The evidence reference must point to a reviewable artifact or test result for the exact candidate SHA.
+
+## 9. Evidence manifest and final decision
 
 For each gate, attach a durable reference (CI URL/log, SQL audit result, pilot manifest, reviewer record or recovery test output). The evidence must correspond to the exact candidate SHA.
 
