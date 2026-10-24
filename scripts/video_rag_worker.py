@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import tempfile
 import uuid
@@ -109,6 +110,43 @@ def split_segments(segments: list[Any], max_words: int = 220) -> list[dict[str, 
     return chunks
 
 
+def validate_timestamped_chunks(
+    chunks: list[dict[str, Any]], duration_seconds: float | None
+) -> None:
+    """Reject empty, non-finite, reversed, non-monotonic, or out-of-duration chunks."""
+    if not chunks:
+        raise ValueError("Transcript contains no non-empty timestamped chunks.")
+    if duration_seconds is not None:
+        try:
+            duration = float(duration_seconds)
+        except (TypeError, ValueError):
+            raise ValueError("Video duration is not numeric.") from None
+        if not math.isfinite(duration) or duration <= 0:
+            raise ValueError("Video duration must be finite and positive.")
+    else:
+        duration = None
+
+    previous_start = -1.0
+    for index, chunk in enumerate(chunks):
+        text = chunk.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(f"Transcript chunk {index} has empty text.")
+        try:
+            start = float(chunk["start_seconds"])
+            end = float(chunk["end_seconds"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"Transcript chunk {index} has invalid timestamps.") from None
+        if not math.isfinite(start) or not math.isfinite(end):
+            raise ValueError(f"Transcript chunk {index} timestamps must be finite.")
+        if start < 0 or end <= start:
+            raise ValueError(f"Transcript chunk {index} must satisfy 0 <= start < end.")
+        if start < previous_start:
+            raise ValueError("Transcript chunk timestamps are not monotonic.")
+        if duration is not None and end > duration + 0.05:
+            raise ValueError(f"Transcript chunk {index} exceeds video duration.")
+        previous_start = start
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=1, help="Maximum videos to process per invocation; must be 1 so each source has an independent lease")
@@ -197,8 +235,7 @@ def main() -> None:
                     )
                     transcript_segments = list(segments_iter)
                     chunks = split_segments(transcript_segments)
-                    if not chunks:
-                        raise RuntimeError("Transcription produced no non-empty text chunks.")
+                    validate_timestamped_chunks(chunks, getattr(info, "duration", None))
 
                     vectors = embedding_model.encode(
                         ["passage: " + chunk["text"] for chunk in chunks],
