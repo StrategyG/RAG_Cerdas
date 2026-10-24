@@ -60,14 +60,19 @@ jobs:
           print("Codespaces devcontainer JSON and recommended secret declarations are valid.")
           PY
 
-      - name: Install lightweight test dependencies
+      - name: Install isolated test dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements-test.txt
+
+      - name: Install OCR test runtime
+        run: sudo apt-get update -qq && sudo apt-get install -y tesseract-ocr tesseract-ocr-eng fonts-dejavu-core
 
       - name: Validate Codespaces shell bootstrap
         run: bash -n .devcontainer/post-create.sh
 
       - name: Compile RAG modules
-        run: python -m py_compile rag_pipeline.py eval_retrieval.py scripts/preflight.py scripts/download_dropbox_pdf_readonly.py scripts/embedding_integrity.py
+        run: |
+          python -m py_compile rag_pipeline.py eval_retrieval.py scripts/preflight.py scripts/download_dropbox_pdf_readonly.py scripts/embedding_integrity.py
+          python -m compileall -q im19
 
       - name: Run unit tests (required)
         run: python -m pytest -q --strict-config --strict-markers tests

@@ -1,0 +1,7 @@
+-r requirements.txt
+psycopg[binary]>=3.2,<4
+defusedxml>=0.7.1,<1
+pytesseract>=0.3.13,<1
+Pillow>=10.4,<13
+# Install llama-cpp-python separately using a reviewed wheel for your platform:
+llama-cpp-python>=0.3.16,<0.4

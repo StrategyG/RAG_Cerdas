@@ -1,0 +1,37 @@
+# Example only. Review secrets, budgets, image digest and database role before starting.
+services:
+  knowledge-worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.knowledge
+    command: ["worker", "--connection-id", "${IM19_CONNECTION_ID:?set approved source connection UUID}"]
+    restart: unless-stopped
+    read_only: true
+    init: true
+    stop_grace_period: 5m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 8g
+    cpus: 4
+    pids_limit: 128
+    environment:
+      IM19_GGUF_PATH: /models/qwen.gguf
+      IM19_GGUF_SHA256: ${IM19_GGUF_SHA256:?set reviewed GGUF hash}
+      IM19_EMBEDDING_PATH: /models/multilingual-e5-small
+      IM19_WORKDIR: /data/im19
+    volumes:
+      - im19-data:/data/im19
+      - ${IM19_MODELS_DIR:?set model directory}:/models:ro
+    tmpfs: [/tmp:size=512m,mode=1777]
+    secrets: [im19_database_dsn, dropbox_app_key, dropbox_app_secret, dropbox_refresh_token]
+secrets:
+  im19_database_dsn:
+    file: ${IM19_SECRETS_DIR:?set secret mount directory}/im19_database_dsn
+  dropbox_app_key:
+    file: ${IM19_SECRETS_DIR}/dropbox_app_key
+  dropbox_app_secret:
+    file: ${IM19_SECRETS_DIR}/dropbox_app_secret
+  dropbox_refresh_token:
+    file: ${IM19_SECRETS_DIR}/dropbox_refresh_token
+volumes:
+  im19-data:
