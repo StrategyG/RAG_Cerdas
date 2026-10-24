@@ -313,6 +313,9 @@ def encode_passages(model: Any, texts: list[str], batch_size: int = DEFAULT_EMBE
 
 
 def embed_document(client: RAGClient, model: Any, document_id: str, batch_size: int) -> dict[str, int]:
+    from scripts.embedding_integrity import validate_embedding_batch_size
+
+    validate_embedding_batch_size(batch_size)
     chunks = client.list_chunks(document_id)
     if not chunks:
         raise RuntimeError("No unembedded chunks were returned after page-aware extraction")
