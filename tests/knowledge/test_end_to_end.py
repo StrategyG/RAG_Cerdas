@@ -99,6 +99,8 @@ def test_auth_blocked_preserves_stage_and_does_not_publish(database, tmp_path):
 
     data = pdf()
     doc, _ = discover(database, data)
+    with database.tx() as conn:
+        conn.execute("UPDATE im19.source_files SET access_authorized=true")
     dropbox = Mock()
     dropbox.download.side_effect = PipelineError("AUTH_BLOCKED", "DROPBOX_UNAUTHORIZED")
     runner = Orchestrator(
@@ -156,3 +158,25 @@ def test_publication_gate_rejects_missing_approval_after_indexed(database):
                 "UPDATE im19.document_versions SET state='PUBLISHED' WHERE id=%s",
                 (doc,),
             )
+
+
+def test_unapproved_source_is_not_downloaded_and_resumes_after_separate_authorization(
+    database, tmp_path
+):
+    data = pdf("Risk management protects capital.")
+    doc, _ = discover(database, data)
+    dropbox = Mock()
+    dropbox.download.return_value = data
+    runner = Orchestrator(
+        database, dropbox, FixtureModel(), FixtureEmbedder(), workdir=tmp_path
+    )
+    runner.run_one(doc)
+    assert database.load(doc)["state"] == "NEEDS_HUMAN_REVIEW"
+    assert not dropbox.download.called
+    with database.tx() as conn:
+        conn.execute("UPDATE im19.source_files SET access_authorized=true")
+    assert database.resume_approved() == 1
+    runner.run_one(doc)
+    assert dropbox.download.call_count == 1
+    assert database.load(doc)["state"] == "NEEDS_HUMAN_REVIEW"
+    assert database.load(doc)["checkpoint"].get("review_run_id")

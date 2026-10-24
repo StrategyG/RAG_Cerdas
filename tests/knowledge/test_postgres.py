@@ -62,9 +62,27 @@ def test_migration_creates_entities_rls_and_publication_gate(database):
         tables = conn.execute(
             "SELECT relname,relrowsecurity,relforcerowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='im19' AND relkind='r'"
         ).fetchall()
-        assert len(tables) >= 19 and all(
-            t["relrowsecurity"] and t["relforcerowsecurity"] for t in tables
-        )
+        required = {
+            "source_connections",
+            "source_files",
+            "document_versions",
+            "extraction_runs",
+            "document_pages",
+            "chunks",
+            "knowledge_units",
+            "knowledge_claims",
+            "claim_evidence",
+            "review_runs",
+            "review_findings",
+            "human_approvals",
+            "knowledge_nodes",
+            "knowledge_relations",
+            "embeddings",
+            "ingestion_jobs",
+            "audit_events",
+        }
+        assert {t["relname"] for t in tables} == required
+        assert all(t["relrowsecurity"] and t["relforcerowsecurity"] for t in tables)
         assert not conn.execute(
             "SELECT has_schema_privilege('public','im19','USAGE') AS p"
         ).fetchone()["p"]
@@ -244,3 +262,63 @@ def test_real_embedding_persistence_and_readback(database):
             ).fetchone()["dims"]
             == 384
         )
+
+
+def test_superseded_running_job_is_fenced_and_removed_from_active_queue(database):
+    doc, cid = discover(database)
+    old_job = database.claim("old-worker")
+    discover(database, data=b"new-content", rev="def456", connection_id=cid)
+    with database.tx() as conn:
+        row = conn.execute(
+            "SELECT status,lease_token,last_error_code FROM im19.ingestion_jobs WHERE document_id=%s",
+            (doc,),
+        ).fetchone()
+    assert (
+        row["status"] == "blocked"
+        and row["lease_token"] is None
+        and row["last_error_code"] == "SOURCE_SUPERSEDED"
+    )
+    with pytest.raises(PipelineError, match="LEASE_LOST"):
+        database.heartbeat(old_job)
+
+
+def test_database_rejects_fabricated_unit_quotes_and_worker_source_reconfiguration(
+    database,
+):
+    from im19.contracts import KnowledgeUnit
+
+    doc, cid = discover(database)
+    job = database.claim("worker")
+    text = "Risk management protects capital."
+    page = Page("pdf:page:1", text, 1)
+    chunk = Chunk(str(uuid4()), doc, page.locator, text, 1, 1, digest(text))
+    database.save_extraction(job, [page], [chunk])
+    unit = KnowledgeUnit(
+        str(uuid4()),
+        doc,
+        "Risk",
+        "Trading",
+        "Risk Management",
+        "principle",
+        text,
+        "Fake quotation",
+        1,
+        1,
+        [chunk.chunk_id],
+        page.locator,
+        "fixture-model",
+        digest(text),
+    )
+    with pytest.raises(psycopg.errors.RaiseException, match="provenance"):
+        database.save_units(job, [unit])
+    worker = worker_store(database)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with worker.tx() as conn:
+            conn.execute(
+                "UPDATE im19.source_connections SET root_path='/unapproved' WHERE id=%s",
+                (cid,),
+            )
+    with worker.tx() as conn:
+        assert not conn.execute(
+            "SELECT has_table_privilege(current_user,'im19.chunks','UPDATE') AS p"
+        ).fetchone()["p"]

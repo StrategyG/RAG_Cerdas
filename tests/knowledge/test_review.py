@@ -222,3 +222,19 @@ def test_embedding_validation_rejects_nonfinite_wrong_dimensions_and_norm():
     for vector in [[0.0] * 384, [1.0] * 10, [float("inf")] + [0.0] * 383]:
         with pytest.raises(PipelineError):
             validate_vector(vector)
+
+
+def test_model_tree_identity_changes_with_content_and_rejects_symlinks(tmp_path):
+    from im19.model_integrity import tree_sha256
+
+    model = tmp_path / "model"
+    model.mkdir()
+    path = model / "config.json"
+    path.write_text('{"model":"e5"}')
+    first = tree_sha256(model)
+    assert tree_sha256(model) == first
+    path.write_text('{"model":"changed"}')
+    assert tree_sha256(model) != first
+    (model / "linked").symlink_to(path)
+    with pytest.raises(PipelineError, match="SYMLINK"):
+        tree_sha256(model)

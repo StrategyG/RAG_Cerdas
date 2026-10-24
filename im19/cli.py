@@ -55,7 +55,8 @@ def main():
         from im19.retrieval import E5Embedder, HybridRetriever
 
         embedder = E5Embedder(
-            os.getenv("IM19_EMBEDDING_PATH", "intfloat/multilingual-e5-small")
+            os.environ["IM19_EMBEDDING_PATH"],
+            expected_sha256=os.environ["IM19_EMBEDDING_SHA256"],
         )
         if args.command == "search":
             if not args.query:

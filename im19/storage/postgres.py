@@ -155,6 +155,14 @@ class PostgresStore:
                         "document_discovered",
                         {"pipeline_version": PIPELINE_VERSION},
                     )
+            # Invalidate queue ownership as part of the same source/cursor transaction.
+            # A stale worker must not leave superseded work permanently running.
+            conn.execute(
+                "UPDATE im19.ingestion_jobs j SET status='blocked',last_error_code='SOURCE_SUPERSEDED',"
+                "lease_owner=null,lease_token=null,lease_expires_at=null,updated_at=now() "
+                "FROM im19.document_versions v WHERE v.id=j.document_id AND v.state='SUPERSEDED' "
+                "AND j.status IN ('queued','retry','running')"
+            )
             conn.execute(
                 "UPDATE im19.source_connections SET cursor=%s,status='ACTIVE',last_error_code=null,updated_at=now() WHERE id=%s",
                 (cursor, connection_id),
@@ -534,9 +542,20 @@ class PostgresStore:
 
     def resume_approved(self):
         with self.tx() as conn:
+            authorized = conn.execute(
+                "UPDATE im19.document_versions v SET state='DISCOVERED',checkpoint=v.checkpoint-'error_code' "
+                "FROM im19.source_files f WHERE v.source_file_id=f.id AND f.access_authorized AND NOT f.deleted "
+                "AND v.state='NEEDS_HUMAN_REVIEW' AND v.checkpoint->>'error_code'='ACCESS_AUTHORIZATION_REQUIRED' RETURNING v.id"
+            ).fetchall()
+            for row in authorized:
+                conn.execute(
+                    "UPDATE im19.ingestion_jobs SET status='queued',attempts=0,available_at=now() WHERE document_id=%s AND status='blocked'",
+                    (row["id"],),
+                )
+                self.audit(conn, row["id"], "source_access_approved", {})
             rows = conn.execute(
                 "UPDATE im19.ingestion_jobs j SET status='queued',attempts=0,available_at=now() FROM im19.document_versions v "
                 "JOIN im19.human_approvals a ON a.review_run_id=(v.checkpoint->>'review_run_id')::uuid "
                 "WHERE j.document_id=v.id AND j.status='blocked' AND v.state='NEEDS_HUMAN_REVIEW' AND a.decision='approve' RETURNING j.document_id"
             ).fetchall()
-            return len(rows)
+            return len(rows) + len(authorized)

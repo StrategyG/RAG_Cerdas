@@ -18,6 +18,7 @@ services:
       IM19_GGUF_PATH: /models/qwen.gguf
       IM19_GGUF_SHA256: ${IM19_GGUF_SHA256:?set reviewed GGUF hash}
       IM19_EMBEDDING_PATH: /models/multilingual-e5-small
+      IM19_EMBEDDING_SHA256: ${IM19_EMBEDDING_SHA256:?set reviewed E5 model tree hash}
       IM19_WORKDIR: /data/im19
     volumes:
       - im19-data:/data/im19

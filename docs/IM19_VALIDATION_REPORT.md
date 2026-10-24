@@ -5,10 +5,11 @@
 ## Actual local evidence
 
 - Baseline current-main suite: **100 passed in 0.34s** before modification.
-- Expanded suite: **158 passed, 13 skipped in 1.29s** on Python 3.12. The skipped cases are PostgreSQL/pgvector integration tests: this execution environment maps only UID 0 and PostgreSQL refuses root. Tests explicitly report that limitation; mocks are not counted as database verification.
+- Expanded suite: **159 passed, 16 skipped** on Python 3.12. The 16 skipped cases are PostgreSQL/pgvector integration tests: this execution environment maps only UID 0 and PostgreSQL refuses root. Tests explicitly report that limitation; mocks are not counted as database verification.
 - Python compilation, undefined-name/import checks (Ruff F rules), Git whitespace check and top-level SQL/PLpgSQL parsing passed. Parsing is not migration execution.
 - Real PyMuPDF PDF/EPUB parsing and a synthetic scan through installed Tesseract were executed. Scan OCR recognized the expected text with a recorded confidence above the fixture threshold. This is not an OCR corpus accuracy benchmark.
 - OAuth refresh/expiry/revocation, pagination, rate limits, hashes, prompt schemas, provenance, classification ambiguity, publication holds, state progression and legacy local-vs-Dropbox preflight were tested with deterministic provider/model fixtures.
+- Initial CI run [40130182922](https://github.com/StrategyG/RAG_Cerdas/actions/runs/40130182922) on `b39f7c9` executed the real database tests: **170 passed, 1 failed**. The failure was an incorrect expected table count in a test, corrected to an explicit set of all 17 required entities. Additional hardening fences superseded jobs and fingerprints local embedding files; rerun the updated head before accepting it.
 - GitHub CI is configured to run the expanded suite, including a disposable PostgreSQL/pgvector cluster and actual SQL transactions. Its latest outcome must be checked on this PR before merge. No CI success is asserted in this pre-PR record.
 
 ## Feature delivery status

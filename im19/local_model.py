@@ -53,6 +53,9 @@ class LocalQwen:
         if response["choices"][0].get("finish_reason") != "stop":
             raise PipelineError("NEEDS_HUMAN_REVIEW", "MODEL_OUTPUT_TRUNCATED")
         try:
-            return strict_json(response["choices"][0]["message"]["content"])
+            result = strict_json(response["choices"][0]["message"]["content"])
+            if not isinstance(result, dict):
+                raise ValueError("Model response must be an object")
+            return result
         except (ValueError, TypeError):
             raise PipelineError("NEEDS_HUMAN_REVIEW", "MODEL_JSON_INVALID") from None

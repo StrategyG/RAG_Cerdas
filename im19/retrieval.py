@@ -71,13 +71,18 @@ def bm25(query, rows, *, k1=1.5, b=0.75):
 
 
 class E5Embedder:
-    def __init__(self, model_path=EMBED_MODEL):
+    def __init__(self, model_path, *, expected_sha256):
+        from im19.model_integrity import tree_sha256
+
+        actual = tree_sha256(model_path)
+        if actual != expected_sha256:
+            raise PipelineError("AUTH_BLOCKED", "EMBEDDING_MODEL_HASH_MISMATCH")
         from sentence_transformers import SentenceTransformer
 
         self.model = SentenceTransformer(
             model_path, device="cpu", local_files_only=True, trust_remote_code=False
         )
-        self.version = EMBED_MODEL
+        self.version = EMBED_MODEL + "@sha256:" + actual
 
     def passages(self, texts):
         for text in texts:

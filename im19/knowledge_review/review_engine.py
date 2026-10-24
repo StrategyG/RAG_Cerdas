@@ -93,7 +93,7 @@ class ReviewEngine:
                         "unit": unit.to_dict(),
                         "extraction_warnings": warnings,
                         "source_metadata": {},
-                        "comparison_claims": comparisons if role == "D" else [],
+                        "comparison_claims": comparisons if role in {"C", "D"} else [],
                         "relation_kinds": sorted(RELATIONS),
                     },
                 )
