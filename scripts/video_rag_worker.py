@@ -233,6 +233,7 @@ def main() -> None:
                             """
                             UPDATE rag.documents
                             SET ingest_status='indexed', ingest_error=NULL, content_sha256=%s,
+                                mime_type=CASE WHEN mime_type LIKE 'video/%' THEN mime_type ELSE 'video/unknown' END,
                                 metadata=%s::jsonb, indexed_at=now(), updated_at=now()
                             WHERE id=%s
                             """,
