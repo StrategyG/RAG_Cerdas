@@ -18,10 +18,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-import psycopg
-import requests
-from faster_whisper import WhisperModel
-from sentence_transformers import SentenceTransformer
 
 DROPBOX_DOWNLOAD_URL = "https://content.dropboxapi.com/2/files/download"
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
@@ -37,7 +33,14 @@ def require_env(name: str) -> str:
     return value
 
 
-def download_video(dropbox_token: str, dropbox_id: str, destination: Path) -> None:
+def download_video(
+    dropbox_token: str, dropbox_id: str, destination: Path, max_bytes: int
+) -> None:
+    """Download a Dropbox video with connect/read timeouts and a hard byte ceiling."""
+    import requests
+
+    if max_bytes < 1:
+        raise ValueError("max_bytes must be positive")
     # Dropbox file IDs are passed as "id:..." as documented by Dropbox API.
     arg = json.dumps({"path": dropbox_id}, separators=(",", ":"))
     with requests.post(
@@ -50,11 +53,24 @@ def download_video(dropbox_token: str, dropbox_id: str, destination: Path) -> No
         timeout=(20, 180),
     ) as response:
         response.raise_for_status()
+        declared_length = response.headers.get("Content-Length")
+        if declared_length:
+            try:
+                if int(declared_length) > max_bytes:
+                    raise RuntimeError(f"Video exceeds configured byte limit ({max_bytes}).")
+            except ValueError:
+                raise RuntimeError("Dropbox returned an invalid Content-Length header.") from None
+        total_bytes = 0
         with destination.open("wb") as out:
             for block in response.iter_content(chunk_size=1024 * 1024):
-                if block:
-                    out.write(block)
-
+                if not block:
+                    continue
+                total_bytes += len(block)
+                if total_bytes > max_bytes:
+                    raise RuntimeError(f"Video exceeds configured byte limit ({max_bytes}).")
+                out.write(block)
+        if total_bytes == 0:
+            raise RuntimeError("Dropbox returned an empty video file.")
 
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -95,15 +111,26 @@ def split_segments(segments: list[Any], max_words: int = 220) -> list[dict[str, 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--limit", type=int, default=1, help="Maximum videos to process (default: 1 pilot)")
+    parser.add_argument("--limit", type=int, default=1, help="Maximum videos to process (default: 1 pilot; hard cap 10)")
     parser.add_argument("--language", default="id", help="Whisper language code; use 'auto' for detection")
     parser.add_argument("--model", default=WHISPER_MODEL, help="faster-whisper model name; default: small")
+    parser.add_argument(
+        "--max-bytes",
+        type=int,
+        default=int(os.getenv("VIDEO_MAX_BYTES", str(2 * 1024 * 1024 * 1024))),
+        help="Hard download ceiling in bytes (default 2 GiB; env VIDEO_MAX_BYTES)",
+    )
     args = parser.parse_args()
-    if args.limit < 1:
-        raise SystemExit("--limit must be >= 1")
+    if args.limit < 1 or args.limit > 10:
+        raise SystemExit("--limit must be between 1 and 10; bulk processing is deliberately gated.")
+    if args.max_bytes < 1:
+        raise SystemExit("--max-bytes must be >= 1")
 
     db_url = require_env("SUPABASE_DB_URL")
     dropbox_token = require_env("DROPBOX_ACCESS_TOKEN")
+    import psycopg
+    from faster_whisper import WhisperModel
+    from sentence_transformers import SentenceTransformer
     print(f"Loading speech model={args.model!r} device={WHISPER_DEVICE!r}; embedding model={EMBEDDING_MODEL!r}")
     speech_model = WhisperModel(args.model, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE)
     embedding_model = SentenceTransformer(EMBEDDING_MODEL)
@@ -111,40 +138,56 @@ def main() -> None:
         raise SystemExit("Embedding model must output 384 dimensions to match rag.chunks.embedding vector(384).")
 
     with psycopg.connect(db_url) as conn:
+        # Claim rows atomically. SKIP LOCKED prevents duplicate concurrent work.
+        # A two-hour stale processing lease is recoverable after a worker crash.
         rows = conn.execute(
             """
-            SELECT id::text, source_name, source_path, metadata
-            FROM rag.documents
-            WHERE source_provider = 'dropbox'
-              AND (mime_type LIKE 'video/%' OR lower(source_name) ~ '\.(mp4|mov|m4v|webm|mkv|avi)$')
-              AND ingest_status IN ('discovered', 'failed')
+            WITH candidates AS (
+                SELECT id
+                FROM rag.documents
+                WHERE source_provider = 'dropbox'
+                  AND (mime_type LIKE 'video/%' OR lower(source_name) ~ '\\.(mp4|mov|m4v|webm|mkv|avi)$')
+                  AND NULLIF(metadata->>'dropbox_id', '') IS NOT NULL
+                  AND (
+                    ingest_status IN ('discovered', 'failed')
+                    OR (ingest_status = 'processing' AND updated_at < now() - interval '2 hours')
+                  )
+                ORDER BY source_name
+                LIMIT %s
+                FOR UPDATE SKIP LOCKED
+            ),
+            claimed AS (
+                UPDATE rag.documents AS d
+                SET ingest_status='processing', ingest_error=NULL, updated_at=now()
+                FROM candidates AS c
+                WHERE d.id=c.id
+                RETURNING d.id::text AS id, d.source_name, d.source_path, d.metadata
+            )
+            SELECT id, source_name, source_path, metadata
+            FROM claimed
             ORDER BY source_name
-            LIMIT %s
             """,
             (args.limit,),
         ).fetchall()
+        conn.commit()
 
         if not rows:
-            print("No unprocessed Dropbox MP4 records found.")
+            print("No eligible Dropbox videos with metadata.dropbox_id found; nothing was downloaded.")
             return
 
         for document_id, source_name, source_path, metadata in rows:
             metadata = metadata or {}
             dropbox_id = metadata.get("dropbox_id")
             if not dropbox_id:
-                print(f"SKIP {source_name}: metadata.dropbox_id missing")
+                # Defensive guard; the SQL predicate should make this unreachable.
+                print(f"SKIP {source_name}: metadata.dropbox_id missing.")
                 continue
 
             print(f"Processing: {source_name}")
-            conn.execute(
-                "UPDATE rag.documents SET ingest_status='processing', ingest_error=NULL, updated_at=now() WHERE id=%s",
-                (document_id,),
-            )
-            conn.commit()
             try:
                 with tempfile.TemporaryDirectory(prefix="video-rag-") as tmp:
                     video_path = Path(tmp) / "source.mp4"
-                    download_video(dropbox_token, dropbox_id, video_path)
+                    download_video(dropbox_token, dropbox_id, video_path, args.max_bytes)
                     digest = sha256_file(video_path)
                     segments_iter, info = speech_model.transcribe(
                         str(video_path),
