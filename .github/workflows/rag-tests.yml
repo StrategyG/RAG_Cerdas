@@ -57,6 +57,7 @@ jobs:
           secrets = cfg.get("secrets", {})
           assert "SUPABASE_URL" in secrets
           assert "SUPABASE_SERVICE_ROLE_KEY" in secrets
+          assert "SUPABASE_DB_URL" in secrets
           assert "DROPBOX_ACCESS_TOKEN" in secrets
           print("Codespaces devcontainer JSON and recommended secret declarations are valid.")
           PY
