@@ -21,6 +21,9 @@ function constantTimeEqual(a: string, b: string): boolean {
   return mismatch === 0;
 }
 
+// Must match the citation marker emitted by rag.match_chunks_keyword.
+const VIDEO_CITATION_RE = /^\[Video (\d{2}:\d{2}:\d{2}) - (\d{2}:\d{2}:\d{2})\]\s*/;
+
 function authenticate(req: Request): boolean {
   const expected = Deno.env.get("RAG_CHATGPT_API_KEY") ?? "";
   const supplied = req.headers.get("x-rag-api-key") ?? "";
@@ -63,7 +66,7 @@ async function keywordSearch(query: string, limit: number) {
       typeof row.text_content === "string"
     )
     .map((row) => {
-      const videoMatch = row.text_content.match(/^\\[Video (\\d{2}:\\d{2}:\\d{2}) - (\\d{2}:\\d{2}:\\d{2})\\]\\s*/);
+      const videoMatch = row.text_content.match(VIDEO_CITATION_RE);
       const isPageCitation = Number.isInteger(row.page_start) && row.page_start >= 1 &&
         Number.isInteger(row.page_end) && row.page_end === row.page_start;
       const isVideoCitation = Boolean(videoMatch);
