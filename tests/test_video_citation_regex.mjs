@@ -17,6 +17,9 @@ assert.equal(match[2], "00:03:04");
 assert.equal(valid.slice(match[0].length), "Kutipan transkrip video.");
 
 assert.equal("[Video 10:20:30 - 10:21:00]".match(regex)?.[1], "10:20:30");
+assert.equal("[Video 100:00:00 - 100:00:05] long video".match(regex)?.[2], "100:00:05");
+assert.equal("[Video 00:61:02 - 00:03:04] invalid minute".match(regex), null);
+assert.equal("[Video 00:01:62 - 00:03:04] invalid second".match(regex), null);
 assert.equal("Video 00:01:02 - 00:03:04] missing opening bracket".match(regex), null);
 assert.equal("[Video 00:01 - 00:03:04] malformed timestamp".match(regex), null);
 assert.equal("prefix [Video 00:01:02 - 00:03:04] not at start".match(regex), null);
