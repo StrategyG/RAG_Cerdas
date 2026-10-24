@@ -11,12 +11,21 @@ assert.ok(
   "Edge Function must reject video citations whose end timestamp is not after start"
 );
 
+const timestampParserMatch = source.match(
+  /function timestampToSeconds\\(value: string\\): number \\{\\s*const match = value\\.match\\((\\/(?:\\\\.|[^/])*\\/[a-z]*)\\);/s
+);
+assert.ok(timestampParserMatch, "Edge Function must contain a timestamp parser regex");
+const parserLiteral = timestampParserMatch[1];
+const parserSlash = parserLiteral.lastIndexOf("/");
+const timestampParserRegex = new RegExp(parserLiteral.slice(1, parserSlash), parserLiteral.slice(parserSlash + 1));
+
 function timestampToSeconds(value) {
-  const match = value.match(/^(\d{2,}):([0-5]\d):([0-5]\d)$/);
+  const match = value.match(timestampParserRegex);
   if (!match) return Number.NaN;
   return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
 }
 assert.ok(timestampToSeconds("00:03:04") > timestampToSeconds("00:01:02"));
+assert.ok(Number.isNaN(timestampToSeconds("bad timestamp")));
 assert.ok(!(timestampToSeconds("00:01:02") > timestampToSeconds("00:01:02")));
 assert.ok(!(timestampToSeconds("00:00:59") > timestampToSeconds("00:01:00")));
 
