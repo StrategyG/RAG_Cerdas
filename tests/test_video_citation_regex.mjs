@@ -12,7 +12,7 @@ assert.ok(
 );
 
 function timestampToSeconds(value) {
-  const match = value.match(/^(\\d{2,}):([0-5]\\d):([0-5]\\d)$/);
+  const match = value.match(/^(\d{2,}):([0-5]\d):([0-5]\d)$/);
   if (!match) return Number.NaN;
   return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
 }
