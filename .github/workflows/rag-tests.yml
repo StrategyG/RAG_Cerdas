@@ -67,11 +67,19 @@ jobs:
       - name: Validate Codespaces shell bootstrap
         run: bash -n .devcontainer/post-create.sh
 
+      - name: Set up Node.js for Edge Function contract test
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Compile RAG modules
         run: python -m py_compile rag_pipeline.py eval_retrieval.py scripts/preflight.py scripts/download_dropbox_pdf_readonly.py scripts/video_rag_worker.py
 
       - name: Run unit tests (required)
         run: python -m pytest -q --strict-config --strict-markers tests
+
+      - name: Validate video citation parsing behavior
+        run: node tests/test_video_citation_regex.mjs
 
       - name: Validate evaluation case schema
         run: |
