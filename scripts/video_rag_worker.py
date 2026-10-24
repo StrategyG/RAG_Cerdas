@@ -116,7 +116,8 @@ def main() -> None:
             SELECT id::text, source_name, source_path, metadata
             FROM rag.documents
             WHERE source_provider = 'dropbox'
-              AND (mime_type LIKE 'video/%' OR lower(source_name) ~ '\\.(mp4|mov|m4v|webm|mkv|avi)
+              AND (mime_type LIKE 'video/%' OR lower(source_name) ~ '\.(mp4|mov|m4v|webm|mkv|avi)$')
+              AND ingest_status IN ('discovered', 'failed')
             ORDER BY source_name
             LIMIT %s
             """,
@@ -238,125 +239,6 @@ def main() -> None:
                             (digest, json.dumps(new_metadata), document_id),
                         )
                 print(f"INDEXED {source_name}: generation={generation_id}, {len(chunks)} chunks; SHA-256={digest}")
-            except Exception as exc:
-                conn.execute(
-                    "UPDATE rag.documents SET ingest_status='failed', ingest_error=%s, updated_at=now() WHERE id=%s",
-                    (f"{type(exc).__name__}: {str(exc)[:1500]}", document_id),
-                )
-                conn.commit()
-                print(f"FAILED {source_name}: {type(exc).__name__}: {exc}")
-
-
-def _timestamp(seconds: float) -> str:
-    total = max(0, int(seconds))
-    hours, remainder = divmod(total, 3600)
-    minutes, secs = divmod(remainder, 60)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-
-
-if __name__ == "__main__":
-    main()
-)
-              AND ingest_status IN ('discovered', 'failed')
-            ORDER BY source_name
-            LIMIT %s
-            """,
-            (args.limit,),
-        ).fetchall()
-
-        if not rows:
-            print("No unprocessed Dropbox MP4 records found.")
-            return
-
-        for document_id, source_name, source_path, metadata in rows:
-            metadata = metadata or {}
-            dropbox_id = metadata.get("dropbox_id")
-            if not dropbox_id:
-                print(f"SKIP {source_name}: metadata.dropbox_id missing")
-                continue
-
-            print(f"Processing: {source_name}")
-            conn.execute(
-                "UPDATE rag.documents SET ingest_status='processing', ingest_error=NULL, updated_at=now() WHERE id=%s",
-                (document_id,),
-            )
-            conn.commit()
-            try:
-                with tempfile.TemporaryDirectory(prefix="video-rag-") as tmp:
-                    video_path = Path(tmp) / "source.mp4"
-                    download_video(dropbox_token, dropbox_id, video_path)
-                    digest = sha256_file(video_path)
-                    segments_iter, info = speech_model.transcribe(
-                        str(video_path),
-                        language=None if args.language == "auto" else args.language,
-                        vad_filter=True,
-                        word_timestamps=False,
-                    )
-                    transcript_segments = list(segments_iter)
-                    chunks = split_segments(transcript_segments)
-                    if not chunks:
-                        raise RuntimeError("Transcription produced no non-empty text chunks.")
-
-                    vectors = embedding_model.encode(
-                        [chunk["text"] for chunk in chunks],
-                        normalize_embeddings=True,
-                        show_progress_bar=False,
-                    )
-                    with conn.transaction():
-                        # Replace this document's chunks atomically on successful transcription.
-                        conn.execute("DELETE FROM rag.chunks WHERE document_id=%s", (document_id,))
-                        for index, (chunk, vector) in enumerate(zip(chunks, vectors)):
-                            vector_literal = "[" + ",".join(f"{float(v):.8f}" for v in vector) + "]"
-                            chunk_hash = hashlib.sha256(chunk["text"].encode("utf-8")).hexdigest()
-                            conn.execute(
-                                """
-                                INSERT INTO rag.chunks
-                                  (document_id, chunk_index, text_content, token_count,
-                                   content_sha256, metadata, embedding, embedding_model, embedded_at)
-                                VALUES
-                                  (%s, %s, %s, %s, %s, %s::jsonb, %s::vector, %s, now())
-                                """,
-                                (
-                                    document_id,
-                                    index,
-                                    chunk["text"],
-                                    len(chunk["text"].split()),
-                                    chunk_hash,
-                                    json.dumps({
-                                        "source_type": "video",
-                                        "source_name": source_name,
-                                        "start_seconds": chunk["start_seconds"],
-                                        "end_seconds": chunk["end_seconds"],
-                                        "start_timestamp": _timestamp(chunk["start_seconds"]),
-                                        "end_timestamp": _timestamp(chunk["end_seconds"]),
-                                        "language": getattr(info, "language", args.language),
-                                        "transcript_engine": f"faster-whisper:{args.model}",
-                                    }),
-                                    vector_literal,
-                                    EMBEDDING_MODEL,
-                                ),
-                            )
-                        new_metadata = {
-                            **metadata,
-                            "media_type": "video",
-                            "pipeline_stage": "transcribed_embedded",
-                            "transcript_status": "complete",
-                            "transcript_engine": f"faster-whisper:{args.model}",
-                            "embedding_model": EMBEDDING_MODEL,
-                            "transcript_chunk_count": len(chunks),
-                            "duration_seconds": getattr(info, "duration", None),
-                            "source_sha256": digest,
-                        }
-                        conn.execute(
-                            """
-                            UPDATE rag.documents
-                            SET ingest_status='indexed', ingest_error=NULL, content_sha256=%s,
-                                metadata=%s::jsonb, indexed_at=now(), updated_at=now()
-                            WHERE id=%s
-                            """,
-                            (digest, json.dumps(new_metadata), document_id),
-                        )
-                print(f"INDEXED {source_name}: {len(chunks)} chunks; SHA-256={digest}")
             except Exception as exc:
                 conn.execute(
                     "UPDATE rag.documents SET ingest_status='failed', ingest_error=%s, updated_at=now() WHERE id=%s",
