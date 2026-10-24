@@ -1,5 +1,9 @@
 from pathlib import Path
 
+import pytest
+
+from scripts.video_rag_worker import validate_timestamped_chunks
+
 
 def test_video_worker_uses_shared_multilingual_embedding_model():
     source = Path("scripts/video_rag_worker.py").read_text(encoding="utf-8")
@@ -51,3 +55,40 @@ def test_keyword_query_matches_live_search_vector_configuration():
     assert "'pg_catalog.english'::pg_catalog.regconfig" in migration
     assert "'pg_catalog.simple'::pg_catalog.regconfig" not in migration
     assert "DELETE FROM rag.chunks" not in migration
+
+
+def test_video_timestamp_validation_accepts_valid_chunks():
+    validate_timestamped_chunks(
+        [
+            {"text": "opening", "start_seconds": 0.0, "end_seconds": 1.5},
+            {"text": "next", "start_seconds": 1.5, "end_seconds": 3.0},
+        ],
+        3.0,
+    )
+
+
+@pytest.mark.parametrize(
+    ("chunks", "duration", "message"),
+    [
+        ([{"text": "x", "start_seconds": float("nan"), "end_seconds": 1.0}], 2.0, "finite"),
+        ([{"text": "x", "start_seconds": 2.0, "end_seconds": 1.0}], 3.0, "0 <= start < end"),
+        ([{"text": "x", "start_seconds": 0.0, "end_seconds": 4.0}], 3.0, "exceeds video duration"),
+        (
+            [
+                {"text": "first", "start_seconds": 2.0, "end_seconds": 2.5},
+                {"text": "second", "start_seconds": 1.0, "end_seconds": 1.5},
+            ],
+            3.0,
+            "not monotonic",
+        ),
+        ([{"text": " ", "start_seconds": 0.0, "end_seconds": 1.0}], 2.0, "empty text"),
+    ],
+)
+def test_video_timestamp_validation_rejects_invalid_chunks(chunks, duration, message):
+    with pytest.raises(ValueError, match=message):
+        validate_timestamped_chunks(chunks, duration)
+
+
+def test_video_timestamp_validation_rejects_empty_transcript():
+    with pytest.raises(ValueError, match="no non-empty"):
+        validate_timestamped_chunks([], 10.0)
