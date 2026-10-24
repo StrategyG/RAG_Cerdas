@@ -23,7 +23,7 @@ This audit used GitHub repository file reads and read-only Supabase project quer
 | Edge Function runtime | BLOCKED | Critical | `institutional-rag-search` is ACTIVE, version 1, with `verify_jwt=false`. The code implements a custom `x-rag-api-key` check, but secret presence/rotation and unauthorized live-request behavior were not tested. Do not change deployment or auth settings during this audit. |
 | Video worker | NOT TESTED end-to-end | High | Code supports one-video runs, Dropbox download byte ceiling, timestamp chunks, 384D finite embedding validation, and append-only generation metadata. No actual Dropbox video was downloaded or transcribed in this audit. |
 | Migration deployment | BLOCKED | High | Live migration history ended at `20261023200123 video_rag_model_alignment`; branch migration `20261024090000_video_timestamp_keyword_retrieval.sql` is not present in the live history. Do not apply until the full live function contract and permissions are reviewed. |
-| CI / latest commit | NOT TESTED in this audit | High | Workflow file was read, but a verified CI result for the current PR head was not obtained in this audit. Earlier CI success is not proof for the latest commit. |
+| CI / candidate commit | PASS (repository checks only) | High | Workflow run [#40094400731](https://github.com/StrategyG/RAG_Cerdas/actions/runs/40094400731) completed successfully for candidate commit `0cd1ea3bcf5150933c6672452b11dabfbd2d9eca`: Python compilation, 110 pytest tests, video citation regex contract, and evaluation-case schema check passed. This does not verify live DB, Dropbox, Edge Function, or RAG quality. |
 | Dropbox incremental sync | NOT TESTED | High | No live Dropbox API enumeration/cursor or file metadata validation was run. Worker requires `rag.documents.metadata.dropbox_id` for video discovery. |
 | Security / RLS | FAIL / PARTIAL | High | RLS is enabled on both schemas. Explicit deny policies exist on the four observed `rag` tables, but Supabase security advisors report five `institutional_rag` tables with RLS enabled and no policies. This is default-deny for those API roles, but intended access and all grants/schema exposure still need review. |
 
@@ -55,7 +55,7 @@ Counts are a snapshot, not a durable invariant; rerun the read-only audit before
 
 **Assumptions:** none are treated as release evidence. The branch worker is expected to use the current `rag` schema based on its SQL and the retrieved source.
 
-**Unknown / not verified:** current PR-head CI result, secret existence/rotation, actual Dropbox cursor state, current runtime response for authorized/unauthorized requests, real PDF/video pilot, embedding retrieval, citation accuracy, latency, backup restore, and rollback execution. The repeatable read-only SQL audit was added at `supabase/verification/institutional_rag_production_audit.sql`; it has not yet been executed as a repository-side test.
+**Unknown / not verified:** secret existence/rotation, actual Dropbox cursor state, current runtime response for authorized/unauthorized requests, real PDF/video pilot, embedding retrieval, citation accuracy, latency, backup restore, and rollback execution. The repeatable read-only SQL audit was added at `supabase/verification/institutional_rag_production_audit.sql`; it is included in the CI file-presence check but has not been executed against a separate non-production database.
 
 ## Release status
 
