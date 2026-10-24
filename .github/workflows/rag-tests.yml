@@ -30,6 +30,7 @@ jobs:
           test -s eval_cases.json
           test -s requirements.txt
           test -s requirements-test.txt
+          test -s requirements-video.txt
           test -s scripts/preflight.py
           test -s scripts/supabase_http.py
           test -s scripts/download_dropbox_pdf_readonly.py
@@ -67,7 +68,7 @@ jobs:
         run: bash -n .devcontainer/post-create.sh
 
       - name: Compile RAG modules
-        run: python -m py_compile rag_pipeline.py eval_retrieval.py scripts/preflight.py scripts/download_dropbox_pdf_readonly.py
+        run: python -m py_compile rag_pipeline.py eval_retrieval.py scripts/preflight.py scripts/download_dropbox_pdf_readonly.py scripts/video_rag_worker.py
 
       - name: Run unit tests (required)
         run: python -m pytest -q --strict-config --strict-markers tests
