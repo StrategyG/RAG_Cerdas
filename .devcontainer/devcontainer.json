@@ -28,8 +28,11 @@
     "SUPABASE_SERVICE_ROLE_KEY": {
       "description": "Server-side Supabase secret key (sb_secret_...) preferred, or legacy service_role JWT. Never use anon/publishable keys; never paste into chat or commit."
     },
+    "SUPABASE_DB_URL": {
+      "description": "Server-side PostgreSQL connection string used by the video worker. Keep private; never use in client/browser code."
+    },
     "DROPBOX_ACCESS_TOKEN": {
-      "description": "Optional. Dropbox API access token with permission to read the source PDFs."
+      "description": "Dropbox API access token with read permission for source PDFs and videos."
     }
   }
 }

@@ -30,6 +30,7 @@ jobs:
           test -s eval_cases.json
           test -s requirements.txt
           test -s requirements-test.txt
+          test -s requirements-video.txt
           test -s scripts/preflight.py
           test -s scripts/supabase_http.py
           test -s scripts/download_dropbox_pdf_readonly.py
@@ -37,6 +38,7 @@ jobs:
           test -s supabase/migrations/20261018183310_drop_duplicate_ingest_job_index.sql
           test -s supabase/verification/verify_ingestion_state.sql
           test -s supabase/verification/diagnose_ingestion_stalls.sql
+          test -s supabase/verification/institutional_rag_production_audit.sql
           test -d tests
           test -s tests/test_page_chunking.py
           test -s tests/test_eval_metrics.py
@@ -56,6 +58,7 @@ jobs:
           secrets = cfg.get("secrets", {})
           assert "SUPABASE_URL" in secrets
           assert "SUPABASE_SERVICE_ROLE_KEY" in secrets
+          assert "SUPABASE_DB_URL" in secrets
           assert "DROPBOX_ACCESS_TOKEN" in secrets
           print("Codespaces devcontainer JSON and recommended secret declarations are valid.")
           PY
@@ -66,11 +69,19 @@ jobs:
       - name: Validate Codespaces shell bootstrap
         run: bash -n .devcontainer/post-create.sh
 
+      - name: Set up Node.js for Edge Function contract test
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Compile RAG modules
-        run: python -m py_compile rag_pipeline.py eval_retrieval.py scripts/preflight.py scripts/download_dropbox_pdf_readonly.py
+        run: python -m py_compile rag_pipeline.py eval_retrieval.py scripts/preflight.py scripts/download_dropbox_pdf_readonly.py scripts/video_rag_worker.py
 
       - name: Run unit tests (required)
         run: python -m pytest -q --strict-config --strict-markers tests
+
+      - name: Validate video citation parsing behavior
+        run: node tests/test_video_citation_regex.mjs
 
       - name: Validate evaluation case schema
         run: |

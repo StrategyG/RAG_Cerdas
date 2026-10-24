@@ -12,18 +12,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
-import psycopg
-import requests
-from faster_whisper import WhisperModel
-from sentence_transformers import SentenceTransformer
 
 DROPBOX_DOWNLOAD_URL = "https://content.dropboxapi.com/2/files/download"
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "small")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
@@ -36,7 +34,14 @@ def require_env(name: str) -> str:
     return value
 
 
-def download_video(dropbox_token: str, dropbox_id: str, destination: Path) -> None:
+def download_video(
+    dropbox_token: str, dropbox_id: str, destination: Path, max_bytes: int
+) -> None:
+    """Download a Dropbox video with connect/read timeouts and a hard byte ceiling."""
+    import requests
+
+    if max_bytes < 1:
+        raise ValueError("max_bytes must be positive")
     # Dropbox file IDs are passed as "id:..." as documented by Dropbox API.
     arg = json.dumps({"path": dropbox_id}, separators=(",", ":"))
     with requests.post(
@@ -49,11 +54,24 @@ def download_video(dropbox_token: str, dropbox_id: str, destination: Path) -> No
         timeout=(20, 180),
     ) as response:
         response.raise_for_status()
+        declared_length = response.headers.get("Content-Length")
+        if declared_length:
+            try:
+                if int(declared_length) > max_bytes:
+                    raise RuntimeError(f"Video exceeds configured byte limit ({max_bytes}).")
+            except ValueError:
+                raise RuntimeError("Dropbox returned an invalid Content-Length header.") from None
+        total_bytes = 0
         with destination.open("wb") as out:
             for block in response.iter_content(chunk_size=1024 * 1024):
-                if block:
-                    out.write(block)
-
+                if not block:
+                    continue
+                total_bytes += len(block)
+                if total_bytes > max_bytes:
+                    raise RuntimeError(f"Video exceeds configured byte limit ({max_bytes}).")
+                out.write(block)
+        if total_bytes == 0:
+            raise RuntimeError("Dropbox returned an empty video file.")
 
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -92,17 +110,65 @@ def split_segments(segments: list[Any], max_words: int = 220) -> list[dict[str, 
     return chunks
 
 
+def validate_timestamped_chunks(
+    chunks: list[dict[str, Any]], duration_seconds: float | None
+) -> None:
+    """Reject empty, non-finite, reversed, non-monotonic, or out-of-duration chunks."""
+    if not chunks:
+        raise ValueError("Transcript contains no non-empty timestamped chunks.")
+    if duration_seconds is not None:
+        try:
+            duration = float(duration_seconds)
+        except (TypeError, ValueError):
+            raise ValueError("Video duration is not numeric.") from None
+        if not math.isfinite(duration) or duration <= 0:
+            raise ValueError("Video duration must be finite and positive.")
+    else:
+        duration = None
+
+    previous_start = -1.0
+    for index, chunk in enumerate(chunks):
+        text = chunk.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(f"Transcript chunk {index} has empty text.")
+        try:
+            start = float(chunk["start_seconds"])
+            end = float(chunk["end_seconds"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"Transcript chunk {index} has invalid timestamps.") from None
+        if not math.isfinite(start) or not math.isfinite(end):
+            raise ValueError(f"Transcript chunk {index} timestamps must be finite.")
+        if start < 0 or end <= start:
+            raise ValueError(f"Transcript chunk {index} must satisfy 0 <= start < end.")
+        if start < previous_start:
+            raise ValueError("Transcript chunk timestamps are not monotonic.")
+        if duration is not None and end > duration + 0.05:
+            raise ValueError(f"Transcript chunk {index} exceeds video duration.")
+        previous_start = start
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--limit", type=int, default=1, help="Maximum videos to process (default: 1 pilot)")
+    parser.add_argument("--limit", type=int, default=1, help="Maximum videos to process per invocation; must be 1 so each source has an independent lease")
     parser.add_argument("--language", default="id", help="Whisper language code; use 'auto' for detection")
     parser.add_argument("--model", default=WHISPER_MODEL, help="faster-whisper model name; default: small")
+    parser.add_argument(
+        "--max-bytes",
+        type=int,
+        default=int(os.getenv("VIDEO_MAX_BYTES", str(2 * 1024 * 1024 * 1024))),
+        help="Hard download ceiling in bytes (default 2 GiB; env VIDEO_MAX_BYTES)",
+    )
     args = parser.parse_args()
-    if args.limit < 1:
-        raise SystemExit("--limit must be >= 1")
+    if args.limit != 1:
+        raise SystemExit("--limit must be 1; use independent workers for concurrency so each source has its own lease.")
+    if args.max_bytes < 1:
+        raise SystemExit("--max-bytes must be >= 1")
 
     db_url = require_env("SUPABASE_DB_URL")
     dropbox_token = require_env("DROPBOX_ACCESS_TOKEN")
+    import psycopg
+    from faster_whisper import WhisperModel
+    from sentence_transformers import SentenceTransformer
     print(f"Loading speech model={args.model!r} device={WHISPER_DEVICE!r}; embedding model={EMBEDDING_MODEL!r}")
     speech_model = WhisperModel(args.model, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE)
     embedding_model = SentenceTransformer(EMBEDDING_MODEL)
@@ -110,40 +176,56 @@ def main() -> None:
         raise SystemExit("Embedding model must output 384 dimensions to match rag.chunks.embedding vector(384).")
 
     with psycopg.connect(db_url) as conn:
+        # Claim rows atomically. SKIP LOCKED prevents duplicate concurrent work.
+        # A two-hour stale processing lease is recoverable after a worker crash.
         rows = conn.execute(
             """
-            SELECT id::text, source_name, source_path, metadata
-            FROM rag.documents
-            WHERE source_provider = 'dropbox'
-              AND mime_type = 'video/mp4'
-              AND ingest_status IN ('discovered', 'failed')
+            WITH candidates AS (
+                SELECT id
+                FROM rag.documents
+                WHERE source_provider = 'dropbox'
+                  AND (mime_type LIKE 'video/%' OR lower(source_name) ~ '\\.(mp4|mov|m4v|webm|mkv|avi)$')
+                  AND NULLIF(metadata->>'dropbox_id', '') IS NOT NULL
+                  AND (
+                    ingest_status IN ('discovered', 'failed')
+                    OR (ingest_status = 'processing' AND updated_at < now() - interval '24 hours')
+                  )
+                ORDER BY source_name
+                LIMIT %s
+                FOR UPDATE SKIP LOCKED
+            ),
+            claimed AS (
+                UPDATE rag.documents AS d
+                SET ingest_status='processing', ingest_error=NULL, updated_at=now()
+                FROM candidates AS c
+                WHERE d.id=c.id
+                RETURNING d.id::text AS id, d.source_name, d.source_path, d.metadata
+            )
+            SELECT id, source_name, source_path, metadata
+            FROM claimed
             ORDER BY source_name
-            LIMIT %s
             """,
             (args.limit,),
         ).fetchall()
+        conn.commit()
 
         if not rows:
-            print("No unprocessed Dropbox MP4 records found.")
+            print("No eligible Dropbox videos with metadata.dropbox_id found; nothing was downloaded.")
             return
 
         for document_id, source_name, source_path, metadata in rows:
             metadata = metadata or {}
             dropbox_id = metadata.get("dropbox_id")
             if not dropbox_id:
-                print(f"SKIP {source_name}: metadata.dropbox_id missing")
+                # Defensive guard; the SQL predicate should make this unreachable.
+                print(f"SKIP {source_name}: metadata.dropbox_id missing.")
                 continue
 
             print(f"Processing: {source_name}")
-            conn.execute(
-                "UPDATE rag.documents SET ingest_status='processing', ingest_error=NULL, updated_at=now() WHERE id=%s",
-                (document_id,),
-            )
-            conn.commit()
             try:
                 with tempfile.TemporaryDirectory(prefix="video-rag-") as tmp:
                     video_path = Path(tmp) / "source.mp4"
-                    download_video(dropbox_token, dropbox_id, video_path)
+                    download_video(dropbox_token, dropbox_id, video_path, args.max_bytes)
                     digest = sha256_file(video_path)
                     segments_iter, info = speech_model.transcribe(
                         str(video_path),
@@ -153,18 +235,28 @@ def main() -> None:
                     )
                     transcript_segments = list(segments_iter)
                     chunks = split_segments(transcript_segments)
-                    if not chunks:
-                        raise RuntimeError("Transcription produced no non-empty text chunks.")
+                    validate_timestamped_chunks(chunks, getattr(info, "duration", None))
 
                     vectors = embedding_model.encode(
-                        [chunk["text"] for chunk in chunks],
+                        ["passage: " + chunk["text"] for chunk in chunks],
                         normalize_embeddings=True,
                         show_progress_bar=False,
+                        convert_to_numpy=True,
                     )
+                    if vectors.ndim != 2 or vectors.shape != (len(chunks), 384):
+                        raise RuntimeError("Embedding output must be a finite N x 384 matrix.")
+                    import numpy as np
+                    if not np.isfinite(vectors).all():
+                        raise RuntimeError("Embedding output contains NaN or infinite values.")
+
+                    generation_id = str(uuid.uuid4())
                     with conn.transaction():
-                        # Replace this document's chunks atomically on successful transcription.
-                        conn.execute("DELETE FROM rag.chunks WHERE document_id=%s", (document_id,))
-                        for index, (chunk, vector) in enumerate(zip(chunks, vectors)):
+                        # Append a new generation. Keep all previous chunks for rollback/audit.
+                        chunk_base = conn.execute(
+                            "SELECT COALESCE(MAX(chunk_index), -1) + 1 FROM rag.chunks WHERE document_id=%s",
+                            (document_id,),
+                        ).fetchone()[0]
+                        for index, (chunk, vector) in enumerate(zip(chunks, vectors), start=int(chunk_base)):
                             vector_literal = "[" + ",".join(f"{float(v):.8f}" for v in vector) + "]"
                             chunk_hash = hashlib.sha256(chunk["text"].encode("utf-8")).hexdigest()
                             conn.execute(
@@ -184,6 +276,8 @@ def main() -> None:
                                     json.dumps({
                                         "source_type": "video",
                                         "source_name": source_name,
+                                        "video_generation": generation_id,
+                                        "chunking_version": "timestamped-video-v1",
                                         "start_seconds": chunk["start_seconds"],
                                         "end_seconds": chunk["end_seconds"],
                                         "start_timestamp": _timestamp(chunk["start_seconds"]),
@@ -205,17 +299,27 @@ def main() -> None:
                             "transcript_chunk_count": len(chunks),
                             "duration_seconds": getattr(info, "duration", None),
                             "source_sha256": digest,
+                            "video_rag": {
+                                **(metadata.get("video_rag") or {}),
+                                "version": 1,
+                                "active_generation": generation_id,
+                                "citation_mode": "timestamped_video",
+                                "chunk_count": len(chunks),
+                                "content_sha256": digest,
+                                "indexed_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+                            },
                         }
                         conn.execute(
                             """
                             UPDATE rag.documents
                             SET ingest_status='indexed', ingest_error=NULL, content_sha256=%s,
+                                mime_type=CASE WHEN mime_type LIKE 'video/%' THEN mime_type ELSE 'video/unknown' END,
                                 metadata=%s::jsonb, indexed_at=now(), updated_at=now()
                             WHERE id=%s
                             """,
                             (digest, json.dumps(new_metadata), document_id),
                         )
-                print(f"INDEXED {source_name}: {len(chunks)} chunks; SHA-256={digest}")
+                print(f"INDEXED {source_name}: generation={generation_id}, {len(chunks)} chunks; SHA-256={digest}")
             except Exception as exc:
                 conn.execute(
                     "UPDATE rag.documents SET ingest_status='failed', ingest_error=%s, updated_at=now() WHERE id=%s",
