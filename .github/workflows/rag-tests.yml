@@ -67,7 +67,7 @@ jobs:
         run: bash -n .devcontainer/post-create.sh
 
       - name: Compile RAG modules
-        run: python -m py_compile rag_pipeline.py eval_retrieval.py scripts/preflight.py scripts/download_dropbox_pdf_readonly.py
+        run: python -m py_compile rag_pipeline.py eval_retrieval.py scripts/preflight.py scripts/download_dropbox_pdf_readonly.py scripts/embedding_integrity.py
 
       - name: Run unit tests (required)
         run: python -m pytest -q --strict-config --strict-markers tests
