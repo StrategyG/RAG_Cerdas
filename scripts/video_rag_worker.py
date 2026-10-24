@@ -196,7 +196,7 @@ def main() -> None:
                                     json.dumps({
                                         "source_type": "video",
                                         "source_name": source_name,
-                                        "ingest_generation": generation_id,
+                                        "video_generation": generation_id,
                                         "chunking_version": "timestamped-video-v1",
                                         "start_seconds": chunk["start_seconds"],
                                         "end_seconds": chunk["end_seconds"],
@@ -219,11 +219,11 @@ def main() -> None:
                             "transcript_chunk_count": len(chunks),
                             "duration_seconds": getattr(info, "duration", None),
                             "source_sha256": digest,
-                            "page_aware_ingest": {
-                                **(metadata.get("page_aware_ingest") or {}),
+                            "video_rag": {
+                                **(metadata.get("video_rag") or {}),
                                 "version": 1,
                                 "active_generation": generation_id,
-                                "page_mapping": "timestamped_video",
+                                "citation_mode": "timestamped_video",
                                 "chunk_count": len(chunks),
                                 "content_sha256": digest,
                                 "indexed_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
