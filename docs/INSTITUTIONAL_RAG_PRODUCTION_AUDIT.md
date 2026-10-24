@@ -25,7 +25,7 @@ This audit used GitHub repository file reads and read-only Supabase project quer
 | Migration deployment | BLOCKED | High | Live migration history ended at `20261023200123 video_rag_model_alignment`; branch migration `20261024090000_video_timestamp_keyword_retrieval.sql` is not present in the live history. Do not apply until the full live function contract and permissions are reviewed. |
 | CI / latest commit | NOT TESTED in this audit | High | Workflow file was read, but a verified CI result for the current PR head was not obtained in this audit. Earlier CI success is not proof for the latest commit. |
 | Dropbox incremental sync | NOT TESTED | High | No live Dropbox API enumeration/cursor or file metadata validation was run. Worker requires `rag.documents.metadata.dropbox_id` for video discovery. |
-| Security / RLS | PARTIAL PASS | High | RLS is enabled on the observed `rag` tables; explicit deny policies for `anon` and `authenticated` exist on `rag.audit_events`, `rag.chunks`, `rag.documents`, and `rag.ingest_jobs`. This does not establish all grants, schema exposure, or Edge Function authorization safety. |
+| Security / RLS | FAIL / PARTIAL | High | RLS is enabled on both schemas. Explicit deny policies exist on the four observed `rag` tables, but Supabase security advisors report five `institutional_rag` tables with RLS enabled and no policies. This is default-deny for those API roles, but intended access and all grants/schema exposure still need review. |
 
 ## Live corpus snapshot
 
@@ -47,7 +47,7 @@ Counts are a snapshot, not a durable invariant; rerun the read-only audit before
 4. **Language mismatch risk:** benchmark Indonesian and English queries against reviewed labels. Consider a new generated column/index or a separate lexical strategy only after measured comparisons; do not change live schema during this audit.
 5. **Release evidence is incomplete:** create at least 30 human-reviewed evaluation cases, run retrieval and citation tests, and preserve raw outputs and commit SHA.
 6. **Edge auth risk:** `verify_jwt=false` means the custom API-key boundary is security-critical. Verify secret presence without printing it; test unauthorized and authorized requests in a controlled environment before deployment.
-7. **Video worker operational gaps to test:** timestamp monotonicity and duration bounds, stale-lease recovery, retry limits, transaction/activation consistency, duplicate-run behavior, and error redaction need explicit regression or integration evidence.
+7. **Video worker operational gaps to test:** stale-lease recovery, retry limits, transaction/activation consistency, duplicate-run behavior, and error redaction need explicit integration evidence. A branch change now validates transcript timestamps for finite values, monotonic starts, valid ranges, non-empty text, and known duration bounds; CI still needs to verify this change.
 
 ## Facts, assumptions, unknowns
 
@@ -55,7 +55,7 @@ Counts are a snapshot, not a durable invariant; rerun the read-only audit before
 
 **Assumptions:** none are treated as release evidence. The branch worker is expected to use the current `rag` schema based on its SQL and the retrieved source.
 
-**Unknown / not verified:** current PR-head CI result, secret existence/rotation, actual Dropbox cursor state, current runtime response for authorized/unauthorized requests, real PDF/video pilot, embedding retrieval, citation accuracy, latency, backup restore, and rollback execution.
+**Unknown / not verified:** current PR-head CI result, secret existence/rotation, actual Dropbox cursor state, current runtime response for authorized/unauthorized requests, real PDF/video pilot, embedding retrieval, citation accuracy, latency, backup restore, and rollback execution. The repeatable read-only SQL audit was added at `supabase/verification/institutional_rag_production_audit.sql`; it has not yet been executed as a repository-side test.
 
 ## Release status
 
