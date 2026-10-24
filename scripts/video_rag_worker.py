@@ -111,7 +111,7 @@ def split_segments(segments: list[Any], max_words: int = 220) -> list[dict[str, 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--limit", type=int, default=1, help="Maximum videos to process (default: 1 pilot; hard cap 10)")
+    parser.add_argument("--limit", type=int, default=1, help="Maximum videos to process per invocation; must be 1 so each source has an independent lease")
     parser.add_argument("--language", default="id", help="Whisper language code; use 'auto' for detection")
     parser.add_argument("--model", default=WHISPER_MODEL, help="faster-whisper model name; default: small")
     parser.add_argument(
@@ -121,8 +121,8 @@ def main() -> None:
         help="Hard download ceiling in bytes (default 2 GiB; env VIDEO_MAX_BYTES)",
     )
     args = parser.parse_args()
-    if args.limit < 1 or args.limit > 10:
-        raise SystemExit("--limit must be between 1 and 10; bulk processing is deliberately gated.")
+    if args.limit != 1:
+        raise SystemExit("--limit must be 1; use independent workers for concurrency so each source has its own lease.")
     if args.max_bytes < 1:
         raise SystemExit("--max-bytes must be >= 1")
 
@@ -150,7 +150,7 @@ def main() -> None:
                   AND NULLIF(metadata->>'dropbox_id', '') IS NOT NULL
                   AND (
                     ingest_status IN ('discovered', 'failed')
-                    OR (ingest_status = 'processing' AND updated_at < now() - interval '2 hours')
+                    OR (ingest_status = 'processing' AND updated_at < now() - interval '24 hours')
                   )
                 ORDER BY source_name
                 LIMIT %s
