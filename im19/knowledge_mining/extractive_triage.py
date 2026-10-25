@@ -22,10 +22,14 @@ RUBRICS = {
 }
 TYPE_CODES=sorted(KNOWLEDGE_TYPES)
 LABEL_CODES=sorted(LABELS)
+SCORE_FIELDS=['extraction_integrity','provenance','evidence_strength','consistency']
 
 def compact_schema(source_spans, comparison_spans):
     fields={'s':{'type':'string','enum':['NONE',*source_spans]},'t':{'type':'integer','enum':list(range(len(TYPE_CODES)))},'c':{'type':'string','minLength':1,'maxLength':64},'l':{'type':'array','items':{'type':'integer','enum':list(range(len(LABEL_CODES)))},'maxItems':2},**{k:{'type':'integer','enum':list(range(len(v)))} for k,v in RUBRICS.items()},'j':{'type':'string','enum':['NONE',*comparison_spans]},'q':{'type':'array','items':{'type':['integer','null'],'minimum':0,'maximum':100},'minItems':4,'maxItems':4}}
     if not comparison_spans:fields['D']['enum']=[RUBRICS['D'].index('INSUFFICIENT_COMPARISON')]
+    # Named, enumerated values avoid malformed lengths/out-of-range integers
+    # from grammar implementations that do not enforce array numeric bounds.
+    fields['q']={'type':'object','additionalProperties':False,'properties':{k:{'type':['integer','null'],'enum':[None,0,25,50,75,100]} for k in SCORE_FIELDS},'required':SCORE_FIELDS}
     return {'type':'object','additionalProperties':False,'properties':fields,'required':list(fields)}
 
 def expand_compact(raw):
@@ -34,7 +38,11 @@ def expand_compact(raw):
     def select(values,index):
         if type(index) is not int or not 0<=index<len(values):raise ValueError('COMPACT_CODE_UNKNOWN')
         return values[index]
-    return {'span':raw['s'],'kind':select(TYPE_CODES,raw['t']),'concept':raw['c'],'labels':[select(LABEL_CODES,x) for x in raw['l']],**{k:select(values,raw[k]) for k,values in RUBRICS.items()},'comparison_span':raw['j'],'scores':raw['q']}
+    scores=raw['q']
+    if isinstance(scores,dict):
+        if set(scores)!=set(SCORE_FIELDS):raise ValueError('COMPACT_SCORE_FIELDS')
+        scores=[scores[k] for k in SCORE_FIELDS]
+    return {'span':raw['s'],'kind':select(TYPE_CODES,raw['t']),'concept':raw['c'],'labels':[select(LABEL_CODES,x) for x in raw['l']],**{k:select(values,raw[k]) for k,values in RUBRICS.items()},'comparison_span':raw['j'],'scores':scores}
 STOP = set('the and that this with from have has for are was were will would should can could not but into your you their they its our pada dari yang dan untuk dalam dengan adalah akan atau tidak ini itu sebagai karena oleh suatu dapat lebih juga saya anda kita'.split())
 
 def spans(text):
@@ -47,6 +55,26 @@ def spans(text):
 
 def terms(text):
     return Counter(x for x in re.findall(r'[^\W\d_]{3,}', text.casefold()) if x not in STOP)
+
+def candidate_quality_flags(unit):
+    """Reversible screening flags; retained source text is never rewritten."""
+    text=unit['evidence_text'].strip()
+    if re.match(r'^(?:©|copyright\s*(?:©|\d{4})|all\s+rights\s+reserved\b|ISBN[\s:\d-]|no\s+part\s+of\s+this\s+book\s+may\s+be\s+reproduced)',text,re.I):
+        return ['NON_KNOWLEDGE_FRONT_MATTER']
+    return []
+
+def relation_support_flags(edge):
+    """Conservative support checks, never factual contradiction certification.
+
+    Low lexical overlap can miss synonymous propositions; flagged comparisons
+    remain available for human examination with the original model label.
+    """
+    left,right=edge['source_evidence_text'],edge['target_evidence_text']
+    if edge['kind']=='DIRECT_CONTRADICTION' and len(terms(left).keys() & terms(right).keys())<3:
+        return ['SHARED_PROPOSITION_SUPPORT_MISSING']
+    if edge['kind']=='PERIOD_DIFFERENCE' and not all(re.search(r'\b(?:18|19|20)\d{2}\b',x) for x in [left,right]):
+        return ['BOTH_TEMPORAL_ANCHORS_NOT_IN_SELECTED_EXCERPTS']
+    return []
 
 def comparison_map(chunks):
     """Top one TF-IDF cosine candidate from another document, not verification."""

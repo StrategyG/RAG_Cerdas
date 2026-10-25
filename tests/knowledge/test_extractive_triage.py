@@ -47,3 +47,28 @@ def test_compact_codes_reject_negative_and_boolean_indices():
     with pytest.raises(ValueError):expand_compact(raw)
     raw['t']=True
     with pytest.raises(ValueError):expand_compact(raw)
+
+def test_named_scores_decode_without_inventing_missing_fields():
+    from im19.knowledge_mining.extractive_triage import expand_compact
+    raw={'s':'s0','t':0,'c':'Risk','l':[],'A':0,'B':0,'C':0,'D':7,'E':0,'j':'NONE','q':{'extraction_integrity':75,'provenance':100,'evidence_strength':None,'consistency':50}}
+    assert expand_compact(raw)['scores']==[75,100,None,50]
+    del raw['q']['provenance']
+    with pytest.raises(ValueError):expand_compact(raw)
+
+def test_front_matter_is_flagged_without_changing_source():
+    from im19.knowledge_mining.extractive_triage import candidate_quality_flags
+    u={'evidence_text':'© Copyright 2015, Example Publisher.'}
+    assert candidate_quality_flags(u)==['NON_KNOWLEDGE_FRONT_MATTER']
+    assert u['evidence_text'].startswith('©')
+
+def test_distinct_propositions_do_not_certify_contradiction():
+    from im19.knowledge_mining.extractive_triage import relation_support_flags
+    edge={'kind':'DIRECT_CONTRADICTION','source_evidence_text':'Consider locking profits below the moving average.','target_evidence_text':'Poor habits can conflict with learning protection.'}
+    assert relation_support_flags(edge)==['SHARED_PROPOSITION_SUPPORT_MISSING']
+
+def test_period_comparison_needs_two_temporal_anchors():
+    from im19.knowledge_mining.extractive_triage import relation_support_flags
+    edge={'kind':'PERIOD_DIFFERENCE','source_evidence_text':'Copyright 2015.','target_evidence_text':'No reproduction is permitted.'}
+    assert relation_support_flags(edge)
+    edge['target_evidence_text']='In the 2001 period, the described context differs.'
+    assert relation_support_flags(edge)==[]
