@@ -45,5 +45,12 @@ def test_compact_codes_reject_negative_and_boolean_indices():
     from im19.knowledge_mining.extractive_triage import expand_compact
     raw={'s':'s0','t':-1,'c':'Risk','l':[],'A':0,'B':0,'C':0,'D':7,'E':0,'j':'NONE','q':[None]*4}
     with pytest.raises(ValueError):expand_compact(raw)
+
+def test_named_scores_decode_without_inventing_missing_fields():
+    from im19.knowledge_mining.extractive_triage import expand_compact
+    raw={'s':'s0','t':0,'c':'Risk','l':[],'A':0,'B':0,'C':0,'D':7,'E':0,'j':'NONE','q':{'extraction_integrity':75,'provenance':100,'evidence_strength':None,'consistency':50}}
+    assert expand_compact(raw)['scores']==[75,100,None,50]
+    del raw['q']['provenance']
+    with pytest.raises(ValueError):expand_compact(raw)
     raw['t']=True
     with pytest.raises(ValueError):expand_compact(raw)
