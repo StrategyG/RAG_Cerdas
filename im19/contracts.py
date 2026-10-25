@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 import json
 import math
+import re
 from typing import Any
 from uuid import UUID, uuid5, NAMESPACE_URL
 
@@ -112,10 +113,17 @@ class KnowledgeUnit:
                 or self.page_end != self.page_start
             ):
                 raise ValueError("PDF knowledge must have exact one-based page mapping")
-        elif self.page_end is not None or not self.locator.startswith("epub:"):
-            raise ValueError(
-                "Reflowable EPUB requires a locator, never an invented page"
-            )
+        elif self.page_end is not None:
+            raise ValueError("Unpaged sources cannot invent page numbers")
+        elif self.locator.startswith("video:seconds:"):
+            match = re.fullmatch(r"video:seconds:(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)", self.locator)
+            if not match:
+                raise ValueError("Video requires an exact timestamp interval")
+            start, end = map(float, match.groups())
+            if not math.isfinite(start) or not math.isfinite(end) or end <= start:
+                raise ValueError("Invalid video timestamp interval")
+        elif not self.locator.startswith("epub:"):
+            raise ValueError("Unpaged knowledge requires an EPUB or video locator")
         if self.confidence is not None:
             raise ValueError("Uncalibrated extraction confidence must be null")
 
@@ -139,3 +147,4 @@ def strict_json(raw: str, max_chars: int = 100_000) -> Any:
         raise ValueError("Non-finite JSON value")
 
     return json.loads(raw, object_pairs_hook=pairs, parse_constant=invalid)
+
