@@ -3,3 +3,8 @@ python-dotenv>=1.0,<2
 PyMuPDF>=1.24,<2
 numpy>=1.26,<3
 pytest>=8,<9
+psycopg[binary]>=3.2,<4
+defusedxml>=0.7.1,<1
+pytesseract>=0.3.13,<1
+Pillow>=10.4,<13
+pgserver==0.1.4

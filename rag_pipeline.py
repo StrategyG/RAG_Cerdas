@@ -59,6 +59,9 @@ def extract_page_chunks(pdf_bytes: bytes, tokenizer: Any, max_tokens: int = CHUN
         chunk_index = 0
         for page_no, page in enumerate(document, start=1):
             page_text = normalize_page_text(page.get_text("text", sort=True))
+            from im19.knowledge_mining.document_processor import needs_ocr
+            if needs_ocr(page,page_text):
+                raise ValueError(f"Page {page_no} requires OCR before ingestion; partial generations are refused")
             if not page_text:
                 continue
             total_nonempty_pages += 1
@@ -174,6 +177,15 @@ class PDFSource:
         self.pdf_dir = pdf_dir.resolve()
         self.dropbox_token = dropbox_token
         self.http = requests.Session()
+        self._dropbox_client = None
+        self._metadata_cache = {}
+
+    def dropbox_client(self):
+        if self._dropbox_client is None:
+            from im19.knowledge_mining.dropbox_discovery import DropboxClient
+            from im19.secrets import LegacyEnvironmentSecrets
+            self._dropbox_client = DropboxClient(LegacyEnvironmentSecrets(),session=self.http,legacy_token=self.dropbox_token or "")
+        return self._dropbox_client
 
     def local_path(self, document: dict[str, Any]) -> Path | None:
         source_path = str(document.get("source_path") or "").replace("\\", "/")
@@ -224,25 +236,19 @@ class PDFSource:
                 return {"ok": True, "source": str(local), "bytes": size}
             except OSError as exc:
                 return {"ok": False, "source": str(local), "reason": type(exc).__name__}
-        if not self.dropbox_token:
+        if not self.dropbox_token and not os.getenv("DROPBOX_REFRESH_TOKEN"):
             return {"ok": False, "source": str(document.get("source_path") or ""),
                     "reason": "not_local_and_dropbox_token_missing"}
         path = str(document.get("source_path") or "")
         if not path.startswith("/"):
             return {"ok": False, "source": path, "reason": "dropbox_path_not_absolute"}
         try:
-            resp = self.http.post(
-                "https://api.dropboxapi.com/2/files/get_metadata",
-                headers={
-                    "Authorization": f"Bearer {self.dropbox_token}",
-                    "Content-Type": "application/json",
-                },
-                json={"path": path},
-                timeout=45,
-            )
-            if not resp.ok:
-                return {"ok": False, "source": path, "reason": f"dropbox_metadata_http_{resp.status_code}"}
-            metadata = resp.json()
+            from im19.contracts import PipelineError
+            try:
+                metadata = self.dropbox_client().metadata(path)
+            except PipelineError as exc:
+                return {"ok":False,"source":path,"reason":exc.code,"status":exc.status}
+            self._metadata_cache[path] = metadata
             if metadata.get(".tag") != "file":
                 return {"ok": False, "source": path, "reason": "dropbox_path_is_not_a_file"}
             actual_size = int(metadata.get("size") or 0)
@@ -260,24 +266,11 @@ class PDFSource:
         if local is not None:
             data = local.read_bytes()
         else:
-            if not self.dropbox_token:
-                raise FileNotFoundError(
-                    f"PDF not found locally for {document.get('source_path')!r}; put it under PDF_DIR or configure DROPBOX_ACCESS_TOKEN."
-                )
+            if not self.dropbox_token and not os.getenv("DROPBOX_REFRESH_TOKEN"):
+                raise FileNotFoundError("PDF is not local and Dropbox OAuth is not configured")
             path = str(document.get("source_path") or "")
-            if not path.startswith("/"):
-                raise ValueError(f"Dropbox source_path must be an absolute Dropbox path, got {path!r}")
-            resp = self.http.post(
-                "https://content.dropboxapi.com/2/files/download",
-                headers={
-                    "Authorization": f"Bearer {self.dropbox_token}",
-                    "Dropbox-API-Arg": json.dumps({"path": path}, separators=(",", ":")),
-                },
-                timeout=180,
-            )
-            if not resp.ok:
-                raise RuntimeError(f"Dropbox download failed for {path} ({resp.status_code})")
-            data = resp.content
+            metadata = self._metadata_cache.get(path) or self.dropbox_client().metadata(path)
+            data = self.dropbox_client().download(metadata)
         if not data.startswith(b"%PDF-"):
             raise ValueError(f"Source for {document.get('source_path')} does not look like a PDF")
         expected_size = int(document.get("file_size_bytes") or 0)
