@@ -92,9 +92,17 @@ jobs:
               assert case.get("query") and isinstance(case.get("query"), str)
               assert case["query_id"] not in ids, f"duplicate query_id: {case['query_id']}"
               ids.add(case["query_id"])
+              label_status = case.get("label_status")
+              assert isinstance(label_status, str) and label_status.strip(), "label_status must be explicit"
               qrels = case.get("relevant_chunk_ids", {})
               assert isinstance(qrels, (dict, list)), "relevant_chunk_ids must be a dict or list"
-              if isinstance(qrels, dict):
-                  assert all(isinstance(v, int) and v >= 0 for v in qrels.values())
-          print(f"Validated {len(cases)} evaluation cases; unlabeled cases remain unscored.")
+              if label_status.strip().lower() == "reviewed":
+                  if isinstance(qrels, dict):
+                      assert all(type(v) is int and v >= 0 for v in qrels.values()), "reviewed qrel grades must be non-negative integers"
+                  else:
+                      assert all(
+                          isinstance(cid, (str, int)) and not isinstance(cid, bool) and str(cid).strip()
+                          for cid in qrels
+                      ), "reviewed qrel IDs must be non-empty strings or integers"
+          print(f"Validated {len(cases)} evaluation cases; unreviewed and non-positive cases remain excluded from metrics.")
           PY
