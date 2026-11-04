@@ -73,3 +73,41 @@ No before/after performance improvement, readiness score or corpus quality perce
 | F Production release | BLOCKED | Reviewed migration/backup/staging, built image, monitoring/alerts, restore/rollback rehearsal, endurance test and release approval |
 
 All six must pass before a production-ready declaration. This branch intentionally provides reviewable code, migrations and evidence boundaries without applying production changes.
+
+
+---
+
+## 5 November 2026 engineering addendum
+
+This addendum records subsequent code hardening and a read-only connected Supabase inspection. It does not overwrite the historical test counts above.
+
+### Retrieval evaluator changes submitted for review
+
+- A reviewed case now requires a matching review-evidence envelope: canonical reviewer identifier, `reviewer_type=human`, timezone-aware ISO-8601 review timestamp, and rubric version.
+- Dataset structure and unique query identifiers are checked before the evaluator initializes model/database clients.
+- Reviewed qrels with no positive relevance label are rejected.
+- Retrieved chunk IDs are de-duplicated before ranking metrics, preventing duplicate RPC rows from inflating hit counts.
+- Retrieval reports include the input dataset SHA-256.
+- The second `im19.evaluation.evaluate()` path uses the same envelope structure and rejects empty reviewed gold sets.
+- Regression tests cover duplicate hits, missing/mismatched evidence, malformed timestamps, invalid qrels, and duplicate/empty query cases.
+
+The envelope validation is structural, not reviewer authentication. Production still requires server-side reviewer-registry authorization and an immutable audit record bound to dataset/corpus versions. The repository's current evaluation cases remain unlabelled; no corpus-quality score is claimed.
+
+### Connected Supabase read-only inspection
+
+Observed in the connected active project on 5 November 2026:
+
+- PostgreSQL 17.11.0.003; pgvector 0.8.2.
+- 74 applied migration versions.
+- 21 tables in `institutional_rag`, 4 tables in `rag`, and no `im19` schema in the inspected database.
+- The RAG repository's current `supabase/migrations/` directory contains 5 SQL migration files; its checked-in IM19 migration creates an `im19` schema, unlike the schemas observed live.
+- `institutional_rag` tables have RLS enabled. The advisor reports 21 informational no-policy findings, but the inspected schema ACLs and table privileges deny `anon` and `authenticated` access; the intended service-only boundary must be preserved unless changed through an approved access design.
+- The `rag` tables have explicit deny policies for `anon` and `authenticated`, with no inspected schema usage or table SELECT grants to those roles.
+
+The full read-only findings and required migration reconciliation steps are recorded in `docs/SUPABASE_LIVE_SCHEMA_RECONCILIATION_20261105.md`.
+
+### Safety and release decision
+
+No production database DDL, migration, backup, restore, cutover, or deployment was performed. The Supabase migration history must be mapped to repository ownership and commit SHAs before any new production migration. **Production remains BLOCKED** pending reviewer authentication, human-labeled retrieval gold data, live migration reconciliation, backup/restore evidence, staging validation, operational monitoring, and release approval.
+
+The new evaluator branch must pass CI and independent review before merge.
