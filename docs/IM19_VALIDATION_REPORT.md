@@ -111,3 +111,21 @@ The full read-only findings and required migration reconciliation steps are reco
 No production database DDL, migration, backup, restore, cutover, or deployment was performed. The Supabase migration history must be mapped to repository ownership and commit SHAs before any new production migration. **Production remains BLOCKED** pending reviewer authentication, human-labeled retrieval gold data, live migration reconciliation, backup/restore evidence, staging validation, operational monitoring, and release approval.
 
 The new evaluator branch must pass CI and independent review before merge.
+
+
+### Live readiness gate result (2026-11-05)
+
+A read-only query of the connected Supabase readiness views returned **2 of 9 gates passed and 7 failed**. The two passing gates were advisory AI triage volume (528 candidates) and alignment of 293/293 embedding jobs with source/review state. The failed P0/P1 evidence includes:
+
+- 0 approved/published knowledge excerpts.
+- 0 approved embedding model artifacts.
+- 0 completed staging embeddings with a verified model (minimum gate: 30).
+- 0 active verified human reviewer identities (minimum gate: 2).
+- 0 independently curated evaluation cases (minimum gate: 50).
+- 0 independently scored evaluation cases (minimum gate: 50).
+- 0 indexed source documents despite 434 registered documents.
+- 0 embedded chunks despite 1,109 chunks in the system status view.
+
+The live project also reports 34 active evaluation cases and 38 evaluation result rows; these do not satisfy the independent human-curated evaluation gates. These are database-view snapshot counts, not proof of a full object-storage audit or retrieval quality.
+
+**Decision remains BLOCKED / NO-GO.** Do not fabricate reviewers, labels, embeddings, indexing state, or approvals. See `docs/SUPABASE_LIVE_SCHEMA_RECONCILIATION_20261105.md` for schema, privilege, migration, and gate details.
