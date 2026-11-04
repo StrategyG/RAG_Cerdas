@@ -86,6 +86,52 @@ def normalize_case_qrels(case: dict[str, Any]) -> tuple[dict[str, int], bool]:
     return normalize_qrels(case.get("relevant_chunk_ids", {})), True
 
 
+def evaluation_case_status(qrels: dict[str, int], *, reviewed: bool) -> str:
+    """Classify a case without scoring unreviewed or zero-positive relevance labels."""
+    if not reviewed:
+        return "needs_human_review"
+    if not qrels:
+        return "needs_human_qrels"
+    if not any(grade > 0 for grade in qrels.values()):
+        return "no_positive_relevance"
+    return "scored"
+
+
+def summarize_evaluation_coverage(statuses: list[str]) -> dict[str, Any]:
+    """Report label coverage separately from metric-eligible query coverage."""
+    allowed = {
+        "needs_human_review",
+        "needs_human_qrels",
+        "no_positive_relevance",
+        "scored",
+    }
+    if not isinstance(statuses, list) or any(status not in allowed for status in statuses):
+        raise ValueError("evaluation case statuses are invalid")
+    total = len(statuses)
+    counts = {status: statuses.count(status) for status in allowed}
+    metric_eligible = counts["scored"]
+    judged_without_positive = counts["no_positive_relevance"]
+    evaluated = metric_eligible + judged_without_positive
+    if total == 0 or evaluated != total:
+        overall = "partial_or_unlabeled"
+    elif metric_eligible == 0:
+        overall = "no_metric_eligible_cases"
+    elif judged_without_positive:
+        overall = "scored_with_exclusions"
+    else:
+        overall = "scored"
+    return {
+        "scored_case_count": metric_eligible,
+        "total_case_count": total,
+        "reviewed_case_count": total - counts["needs_human_review"],
+        "no_positive_relevance_case_count": judged_without_positive,
+        "needs_human_qrels_count": counts["needs_human_qrels"],
+        "unreviewed_case_count": counts["needs_human_review"],
+        "evaluation_coverage": evaluated / total if total else 0.0,
+        "overall_status": overall,
+    }
+
+
 def metrics(retrieved_ids: list[str], qrels: dict[str, int], k: int) -> dict[str, float]:
     """Calculate P@k, Recall@k, MRR@k and graded nDCG@k from reviewed relevance labels."""
     if k < 1:
@@ -143,13 +189,13 @@ def main() -> int:
     }
     rows_for_csv = []
     per_method_metrics: dict[str, list[dict[str, float]]] = {"keyword": [], "semantic": []}
-    reviewed_case_count = 0
+    case_statuses: list[str] = []
     for case in cases:
         query_id = case["query_id"]
         query = case["query"]
         gold, is_reviewed = normalize_case_qrels(case)
-        if is_reviewed:
-            reviewed_case_count += 1
+        case_status = evaluation_case_status(gold, reviewed=is_reviewed)
+        case_statuses.append(case_status)
         keyword = client.rpc("rag_worker_match_keyword", {
             "p_query_text": query, "p_match_count": args.k, "p_min_rank": 0,
         }) or []
@@ -165,7 +211,7 @@ def main() -> int:
             "query": query,
             "label_status": case.get("label_status"),
             "gold_label_count": len(gold),
-            "status": "needs_human_qrels" if is_reviewed and not gold else "needs_human_review" if not is_reviewed else "scored",
+            "status": case_status,
             "results": {},
         }
         for method, results in (("keyword", keyword), ("semantic", semantic)):
@@ -186,7 +232,7 @@ def main() -> int:
                 normalized.append(item)
                 rows_for_csv.append({"query_id": query_id, "method": method, **item})
             case_out["results"][method] = normalized
-            if is_reviewed and gold:
+            if case_status == "scored":
                 m = metrics([str(r.get("chunk_id")) for r in normalized], gold, args.k)
                 case_out.setdefault("metrics", {})[method] = m
                 per_method_metrics[method].append(m)
@@ -198,12 +244,7 @@ def main() -> int:
             key: sum(m[key] for m in method_metrics) / len(method_metrics)
             for key in method_metrics[0]
         } if method_metrics else None)
-    output["scored_case_count"] = sum(1 for case in output["cases"] if case["status"] == "scored")
-    output["total_case_count"] = len(cases)
-    output["reviewed_case_count"] = reviewed_case_count
-    output["overall_status"] = (
-        "scored" if output["scored_case_count"] and output["scored_case_count"] == reviewed_case_count else "partial_or_unlabeled"
-    )
+    output.update(summarize_evaluation_coverage(case_statuses))
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

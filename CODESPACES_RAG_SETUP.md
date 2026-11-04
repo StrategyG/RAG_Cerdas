@@ -121,6 +121,14 @@ python eval_retrieval.py --cases eval_cases.json --k 5
 
 The three pilot questions have expected evidence notes but no manually reviewed gold chunk IDs. The evaluator inspects keyword and semantic results, but it must withhold P@5, Recall@5, MRR@5, and nDCG@5 until a reviewer labels the new chunk IDs under `relevant_chunk_ids`. Citation accuracy requires checking page numbers against the original PDFs.
 
+Each case must carry an explicit `label_status`. The report distinguishes:
+- `needs_human_review`: the case has not been judged by a reviewer.
+- `needs_human_qrels`: the case is marked reviewed but contains no chunk judgments.
+- `no_positive_relevance`: the reviewer supplied judgments, but every grade is zero; the case is disclosed and excluded from ranking metrics because recall/MRR/nDCG have no positive relevance denominator.
+- `scored`: reviewed judgments contain at least one positive relevance grade and the case is eligible for ranking metrics.
+
+The overall report is `scored` only when every case is metric-eligible, `scored_with_exclusions` when every case is judged but some have no positive relevance, and `partial_or_unlabeled` when review/qrels are still missing. `no_metric_eligible_cases` means no query can currently contribute valid ranking metrics. Never fill `relevant_chunk_ids` with guessed chunk IDs or synthetic positive labels to make the benchmark pass.
+
 ## 8. Video RAG pilot for MP4
 
 The PDF worker deliberately uses page numbers and excludes MP4 files. Videos need a separate transcription path: Whisper creates timestamped transcript segments, then the same `intfloat/multilingual-e5-small` model creates embeddings. The active video generation is exposed only when its chunk embeddings are complete. Visible text from slides is not OCR'd by this worker.
