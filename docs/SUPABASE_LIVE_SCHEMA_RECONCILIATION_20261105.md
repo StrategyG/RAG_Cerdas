@@ -57,3 +57,33 @@ PostgreSQL `pg_stat_user_tables.n_live_tup` is an estimate, not an exact count. 
 - Do not cut over from Supabase to a PostgreSQL VM until schema, data, authorization, backup/restore, performance, and rollback gates pass.
 
 **Current disposition:** catalog inspection only. No database changes, migrations, backup, restore, or cutover were performed during this inspection.
+
+
+## Production-readiness view snapshot
+
+A read-only query of the live `institutional_rag.production_readiness_v1` and `institutional_rag.system_status` views returned this snapshot on 2026-11-05:
+
+| Signal | Observed | Interpretation |
+|---|---:|---|
+| Registered source documents | 434 | Registered is not indexed |
+| Indexed source documents | 0 | Source catalog/indexing gate fails |
+| Document chunks | 1,109 | Chunks exist but are not proof of retrievable vectors |
+| Embedded chunks | 0 | No embedded corpus was observed in this view |
+| Ingestion runs | 4 | Run count alone does not prove completion |
+| Active evaluation cases | 34 | Active cases are not necessarily independent or human-curated |
+| Evaluation result rows | 38 | Rows alone do not satisfy independent evaluation acceptance |
+| Verified human reviewers | 0 | No active verified reviewer identities were observed |
+| Auth users | 0 | No auth user rows were observed by the readiness query |
+| Independent human-curated cases | 0 | Minimum release threshold is 50 |
+| Independently scored cases | 0 | Minimum release threshold is 50 |
+| AI triage candidates | 528 | The advisory triage count gate passes |
+| Embedding jobs aligned with source/review state | 293 / 293 | Alignment gate passes; completion and vectors remain separate |
+| Approved knowledge excerpts | 0 | No approved/published cited excerpt |
+| Approved embedding model artifacts | 0 | Model attestation gate fails |
+| Completed staging embeddings with verified model | 0 | Minimum release threshold is 30 |
+
+The database view reports 9 gates: 2 pass (`AI_TRIAGE_RECORDED`, `HOLD_NOT_SILENTLY_INDEXED`) and 7 fail. Failed gates include approved knowledge, embedding model attestation, independent evaluation set/run, reviewer identity, source catalog indexing, and staging embedding validation.
+
+These numbers are a snapshot from the database's own readiness views, not a full audit of external object storage or a test of retrieval relevance. Counts and readiness rules can change as records are added or view definitions are updated. Re-run the same query and record its transaction timestamp and code/migration version before each release decision.
+
+**Release conclusion from this snapshot: NO-GO.** Do not manufacture reviewers, labels, embeddings, indexed status, or approvals to satisfy the view. The missing evidence must be produced through the real ingestion, model attestation, independent human review, and benchmark workflows.
