@@ -4,7 +4,7 @@ Institutional RAG and Autonomous Knowledge Intelligence pilot. **Not production-
 
 The new `im19` package supports incremental read-only Dropbox discovery, versioned PDF/EPUB processing, selective PDF OCR, structured knowledge extraction, five logical local-AI review roles, a private PostgreSQL/pgvector schema, fenced worker jobs and citation-safe hybrid retrieval. Publication remains under separate human approval while quality/risk benchmarks are uncalibrated. The legacy `rag_pipeline.py` path remains available.
 
-Start with the [current audit](docs/IM19_AUDIT_20261025.md), [validation/readiness report](docs/IM19_VALIDATION_REPORT.md), [architecture](docs/IM19_ARCHITECTURE.md), [security report](docs/IM19_SECURITY_REPORT.md), [operational runbook](docs/IM19_RUNBOOK.md), and [retrieval evaluation evidence contract](docs/RETRIEVAL_EVALUATION_EVIDENCE_CONTRACT.md).
+Start with the [current audit](docs/IM19_AUDIT_20261025.md), [validation/readiness report](docs/IM19_VALIDATION_REPORT.md), [architecture](docs/IM19_ARCHITECTURE.md), [security report](docs/IM19_SECURITY_REPORT.md), [operational runbook](docs/IM19_RUNBOOK.md), and [retrieval evaluation evidence contract](docs/RETRIEVAL_EVALUATION_EVIDENCE_CONTRACT.md), and [Supabase live-schema reconciliation](docs/SUPABASE_LIVE_SCHEMA_RECONCILIATION_20261105.md).
 
 ## Retrieval evaluation safeguards
 
