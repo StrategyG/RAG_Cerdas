@@ -2,16 +2,74 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Any
+
+
+def has_human_review_attestation(record: dict[str, Any]) -> bool:
+    """Validate the required review-evidence envelope.
+
+    This checks structure and consistency only. A production evaluator must still
+    resolve reviewer_id against the authoritative human reviewer registry and
+    verify the approval/audit record before treating this envelope as trusted.
+    """
+    if not isinstance(record, dict):
+        return False
+
+    attestation = record.get("review_attestation")
+    reviewer_id = record.get("reviewer_id")
+    if not isinstance(attestation, dict):
+        return False
+    if not isinstance(reviewer_id, str) or not reviewer_id.strip():
+        return False
+    if attestation.get("reviewer_id") != reviewer_id:
+        return False
+    if attestation.get("reviewer_type") != "human":
+        return False
+
+    rubric_version = attestation.get("rubric_version")
+    reviewed_at = attestation.get("reviewed_at")
+    if not isinstance(rubric_version, str) or not rubric_version.strip():
+        return False
+    if not isinstance(reviewed_at, str) or not reviewed_at.strip():
+        return False
+
+    try:
+        timestamp = datetime.fromisoformat(reviewed_at.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return timestamp.tzinfo is not None and timestamp.utcoffset() is not None
+
+
+def _normalize_ids(values: Any, *, field_name: str) -> list[str]:
+    if not isinstance(values, (list, tuple, set)):
+        raise ValueError(f"{field_name} must be a list of non-empty chunk IDs")
+    normalized: list[str] = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            raise ValueError(f"{field_name} must contain non-empty chunk IDs")
+        chunk_id = str(value).strip()
+        if not chunk_id:
+            raise ValueError(f"{field_name} must contain non-empty chunk IDs")
+        normalized.append(chunk_id)
+    return normalized
+
 
 def evaluate(records, k=5):
+    if type(k) is not int or k < 1:
+        raise ValueError("k must be a positive integer")
     if not records or not all(
-        r.get("label_status") == "reviewed" and r.get("reviewer_id") for r in records
+        isinstance(record, dict)
+        and record.get("label_status") == "reviewed"
+        and has_human_review_attestation(record)
+        for record in records
     ):
         return {
             "status": "BLOCKED",
-            "reason": "HUMAN_REVIEWED_LABELS_REQUIRED",
+            "reason": "HUMAN_REVIEWED_LABELS_AND_ATTESTATIONS_REQUIRED",
             "metrics": None,
         }
+
     recall, mrr = [], []
     aggregates = {
         key: [0, 0]
@@ -25,29 +83,42 @@ def evaluate(records, k=5):
         )
     }
     for row in records:
-        gold = set(row.get("relevant_chunk_ids", []))
-        found = list(dict.fromkeys(row.get("retrieved_chunk_ids", [])))[:k]
-        if gold:
-            recall.append(len(gold.intersection(found)) / len(gold))
-            mrr.append(next((1 / r for r, c in enumerate(found, 1) if c in gold), 0))
+        gold = set(_normalize_ids(row.get("relevant_chunk_ids"), field_name="relevant_chunk_ids"))
+        if not gold:
+            raise ValueError("Reviewed evaluation cases must contain relevant chunk IDs")
+
+        retrieved = _normalize_ids(row.get("retrieved_chunk_ids", []), field_name="retrieved_chunk_ids")
+        found = list(dict.fromkeys(retrieved))[:k]
+        recall.append(len(gold.intersection(found)) / len(gold))
+        mrr.append(next((1 / rank for rank, chunk_id in enumerate(found, 1) if chunk_id in gold), 0))
+
         for name, pair in row.get("reviewed_counts", {}).items():
             if (
                 name not in aggregates
+                or not isinstance(pair, (list, tuple))
                 or len(pair) != 2
-                or any(type(x) is not int or x < 0 for x in pair)
+                or any(type(value) is not int or value < 0 for value in pair)
                 or pair[0] > pair[1]
             ):
                 raise ValueError("Invalid reviewed metric counts")
             aggregates[name][0] += pair[0]
             aggregates[name][1] += pair[1]
-    metrics = {
-        f"recall@{k}": sum(recall) / len(recall) if recall else None,
-        "MRR": sum(mrr) / len(mrr) if mrr else None,
+
+    result_metrics = {
+        f"recall@{k}": sum(recall) / len(recall),
+        "MRR": sum(mrr) / len(mrr),
     }
-    metrics.update({name: n / d if d else None for name, (n, d) in aggregates.items()})
+    result_metrics.update(
+        {name: numerator / denominator if denominator else None
+         for name, (numerator, denominator) in aggregates.items()}
+    )
     return {
         "status": "MEASURED_ON_SUPPLIED_REVIEWED_LABELS",
         "scored_cases": len(records),
-        "metrics": metrics,
-        "note": "No metric certifies factual truth; record dataset identity, adjudication and model hashes separately.",
+        "metrics": result_metrics,
+        "note": (
+            "This evaluator validates the review evidence envelope, not reviewer identity. "
+            "Production must verify reviewer_id against the authoritative reviewer registry "
+            "and bind the reviewed dataset, rubric, and corpus hashes to an immutable audit record."
+        ),
     }
