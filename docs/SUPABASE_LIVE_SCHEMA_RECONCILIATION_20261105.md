@@ -101,3 +101,20 @@ A subsequent exact-count query against both stores clarified that the readiness 
 The legacy `rag` store has 682 chunks with non-null vectors, but this count alone does not prove model provenance, freshness, retrieval availability, or acceptable relevance. The institutional knowledge pipeline has no embedded chunks in its own canonical tables and remains blocked by its approval and evaluation gates.
 
 This distinction is important: two schemas have different lifecycle models and must not be combined into one readiness number. Before migration or deprecation, define which store is authoritative for each corpus, map document identity and content hashes, verify object-store sources, and test retrieval against each corpus separately. Do not copy or delete records merely to make the counts match.
+
+
+## Legacy `rag` integrity detail (exact live query, 2026-11-05)
+
+A further read-only integrity query measured the legacy `rag` corpus separately:
+
+- 383 documents: 328 `discovered`, 55 `failed`, 0 `indexed`.
+- 26,186 chunks; 682 have non-null embeddings and all 682 also have a non-empty `embedding_model`.
+- 835 chunks have a valid page range, including 835 single-page mappings.
+- 0 chunks have a `qdrant_point_id`.
+- 1 ingest job is recorded as `succeeded`.
+
+The five most recently updated failed records inspected carry the error `ORPHANED_PROCESSING_STATE`: no active ingestion lease/job for over 48 hours. Existing chunks are preserved. This is evidence of a prior stuck-worker recovery classification, not proof that the documents are safe to reprocess. Do not reset or requeue them in bulk. Reconcile each document's source hash, current active chunk generation, lease history, and source bytes before a one-document retry.
+
+**Interpretation:** the legacy corpus has some embedded chunks, but its document lifecycle is not complete and its 682 vectors cannot be assumed to represent a complete, retrievable corpus. A missing `qdrant_point_id` is not itself a failure if the approved retrieval path uses pgvector; verify the actual RPC and vector index path before requiring external Qdrant identifiers.
+
+The `institutional_rag` store remains distinct: 434 source documents (432 discovered, 2 chunked), 1,109 chunks, 0 embedded chunks, and 486 pending plus 183 `needs_more_evidence` knowledge candidates. The two stores require separate release gates and a documented authority map.
