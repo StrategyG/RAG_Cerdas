@@ -118,3 +118,18 @@ The five most recently updated failed records inspected carry the error `ORPHANE
 **Interpretation:** the legacy corpus has some embedded chunks, but its document lifecycle is not complete and its 682 vectors cannot be assumed to represent a complete, retrievable corpus. A missing `qdrant_point_id` is not itself a failure if the approved retrieval path uses pgvector; verify the actual RPC and vector index path before requiring external Qdrant identifiers.
 
 The `institutional_rag` store remains distinct: 434 source documents (432 discovered, 2 chunked), 1,109 chunks, 0 embedded chunks, and 486 pending plus 183 `needs_more_evidence` knowledge candidates. The two stores require separate release gates and a documented authority map.
+
+
+## Dropbox source reconciliation pilot (read-only, 2026-11-05)
+
+The connected Dropbox search and metadata calls found the configured pilot PDF at:
+
+- `/Institutional_RAG/01_RAW_SOURCES/Lesson 4 How emotions can affect your trading results.pdf` — 81,229 bytes, modified 2026-10-19.
+- A second file with the same name exists at `/Lesson 4 How emotions can affect your trading results.pdf` — 81,229 bytes, modified 2026-10-18.
+- An English-suffixed variant exists at `/Lesson 4 How emotions can affect your trading results (eng).pdf` — 478,627 bytes.
+
+The live `rag.documents` table contains matching rows for the root copy and English-suffixed copy. Both currently have `ingest_status='failed'`, `content_sha256 IS NULL`, and an `ORPHANED_PROCESSING_STATE` error. The `Institutional_RAG/01_RAW_SOURCES` copy has not yet been mapped to a distinct live document row by this name query.
+
+The two 81,229-byte copies have different Dropbox file IDs/revisions despite matching size. Size equality is not content identity. Before retrying the pilot, compare downloaded source bytes by SHA-256, confirm the intended canonical Dropbox path, and preserve duplicate/variant records until a human confirms source precedence. The Dropbox metadata `content_hash` is Dropbox's content hash, not the pipeline's whole-file SHA-256; do not copy it into `content_sha256`.
+
+No source file was changed, moved, deleted, or re-uploaded. No database row was modified.
