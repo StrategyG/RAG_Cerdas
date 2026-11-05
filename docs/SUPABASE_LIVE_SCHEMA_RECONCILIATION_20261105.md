@@ -133,3 +133,26 @@ The live `rag.documents` table contains matching rows for the root copy and Engl
 The two 81,229-byte copies have different Dropbox file IDs/revisions despite matching size. Size equality is not content identity. Before retrying the pilot, compare downloaded source bytes by SHA-256, confirm the intended canonical Dropbox path, and preserve duplicate/variant records until a human confirms source precedence. The Dropbox metadata `content_hash` is Dropbox's content hash, not the pipeline's whole-file SHA-256; do not copy it into `content_sha256`.
 
 No source file was changed, moved, deleted, or re-uploaded. No database row was modified.
+
+
+## Repository migration-file reconciliation and static review
+
+The current branch contains five SQL migration files. Three versions are present in the live 74-version ledger:
+
+- `20261018182702_claim_ingest_jobs_only`
+- `20261018183310_drop_duplicate_ingest_job_index`
+- `20261020055818_append_only_ingestion_generations`
+
+Two repository migrations are not present in the live ledger:
+
+1. `20261020130000_whatsapp_inbox.sql` — additive `public.whatsapp_inbox` table with RLS and service-role-only grants. It appears to be a separate WhatsApp pilot, not a required RAG migration. Keep it out of the RAG production cutover unless the WhatsApp scope is separately approved.
+2. `20261025010000_im19_knowledge_intelligence.sql` — creates a new private `im19` schema and a separate ingestion/knowledge lifecycle. It is not applied. **Do not apply it to the live project as-is.**
+
+Static review of the unapplied `im19` migration found additional design questions to resolve in staging before any approval:
+
+- `knowledge_units.confidence` has a check constraint `confidence IS NULL`, which rejects every non-null confidence value. Confirm whether this is intentional or a defect.
+- `human_approvals.reviewer_id` is free text and is not constrained to a verified `auth.users` identity or reviewer registry. The migration therefore does not independently prove human reviewer identity.
+- The new `im19_worker` and `im19_approver` roles are created as NOLOGIN roles, but this migration does not establish which authenticated service principals become members of those roles. Deployment identity mapping is still required.
+- The migration creates a second knowledge lifecycle alongside the already-live `institutional_rag` lifecycle. Its authority, ingestion source, retrieval RPC, publication contract, and retirement/compatibility plan are not established by this DDL alone.
+
+These are static code-review findings, not evidence of a live exploit or runtime failure. The existing live `institutional_rag` and `rag` schemas must remain untouched while the target data model and role mapping are decided. Resolve the questions in a disposable/backup-restored staging database, produce migration tests and rollback evidence, and obtain explicit approval before any hosted DDL.
