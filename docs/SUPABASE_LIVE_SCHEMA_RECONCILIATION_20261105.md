@@ -87,3 +87,17 @@ The database view reports 9 gates: 2 pass (`AI_TRIAGE_RECORDED`, `HOLD_NOT_SILEN
 These numbers are a snapshot from the database's own readiness views, not a full audit of external object storage or a test of retrieval relevance. Counts and readiness rules can change as records are added or view definitions are updated. Re-run the same query and record its transaction timestamp and code/migration version before each release decision.
 
 **Release conclusion from this snapshot: NO-GO.** Do not manufacture reviewers, labels, embeddings, indexed status, or approvals to satisfy the view. The missing evidence must be produced through the real ingestion, model attestation, independent human review, and benchmark workflows.
+
+
+## Correction: per-store live counts (2026-11-05)
+
+A subsequent exact-count query against both stores clarified that the readiness snapshot above is scoped to `institutional_rag`, not the entire Supabase project. Do not interpret its zero embedding count as a project-wide count.
+
+| Store | Documents | Document/chunk rows | Rows with vectors | Document status |
+|---|---:|---:|---:|---|
+| `institutional_rag` | 434 | 1,109 | 0 | 432 discovered; 2 chunked |
+| `rag` | 383 | 26,186 | 682 | 328 discovered; 55 failed |
+
+The legacy `rag` store has 682 chunks with non-null vectors, but this count alone does not prove model provenance, freshness, retrieval availability, or acceptable relevance. The institutional knowledge pipeline has no embedded chunks in its own canonical tables and remains blocked by its approval and evaluation gates.
+
+This distinction is important: two schemas have different lifecycle models and must not be combined into one readiness number. Before migration or deprecation, define which store is authoritative for each corpus, map document identity and content hashes, verify object-store sources, and test retrieval against each corpus separately. Do not copy or delete records merely to make the counts match.
