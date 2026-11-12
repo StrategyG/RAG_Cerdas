@@ -53,8 +53,14 @@ BEGIN
     FROM pg_catalog.pg_roles r
     WHERE r.rolname=NEW.database_login_role
       AND r.rolcanlogin
+      AND r.rolinherit
+      AND NOT r.rolsuper
+      AND NOT r.rolbypassrls
+      AND NOT r.rolcreaterole
+      AND NOT r.rolcreatedb
+      AND NOT r.rolreplication
   ) THEN
-    RAISE EXCEPTION 'reviewer identity requires an existing LOGIN role';
+    RAISE EXCEPTION 'reviewer identity requires a least-privileged LOGIN role';
   END IF;
 
   IF NOT pg_catalog.pg_has_role(
@@ -62,6 +68,15 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'reviewer LOGIN must inherit im19_approver';
   END IF;
+
+  IF pg_catalog.pg_has_role(
+    NEW.database_login_role, 'im19_worker', 'MEMBER'
+  ) THEN
+    RAISE EXCEPTION 'reviewer LOGIN must not inherit im19_worker';
+  END IF;
+
+  NEW.registered_at := pg_catalog.clock_timestamp();
+  NEW.registered_by := session_user;
 
   IF EXISTS (
     SELECT 1
@@ -127,9 +142,11 @@ BEGIN
     RAISE EXCEPTION 'reviewer principal is already revoked';
   END IF;
 
+  NEW.revoked_at := pg_catalog.clock_timestamp();
+  NEW.revoked_by := session_user;
   RETURN NEW;
 END
-$$;
+$;
 
 CREATE TRIGGER reviewer_revocation_insert_gate
 BEFORE INSERT ON im19_security.reviewer_identity_revocations
@@ -175,6 +192,7 @@ BEGIN
       USING ERRCODE='42501';
   END IF;
 
+  NEW.created_at := pg_catalog.clock_timestamp();
   RETURN NEW;
 END
 $$;
