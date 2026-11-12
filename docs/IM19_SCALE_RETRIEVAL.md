@@ -36,6 +36,10 @@ Keep these milestones separate:
 
 Report raw candidates, unique candidates, reviewed units, approved units, embedded units, indexed units, and production-published units separately. The current Dropbox snapshot in the expansion plan is a raw candidate ledger, not an approved or indexed corpus.
 
+## Relationship to RusaAi local memory
+
+RusaAi Architecture v2.0 and CPU Deployment v1.0 specify SQLite for device-local metadata/state and SQLite FTS5 for local full-text search, with vector search optional after benchmarking. This IM19 PostgreSQL benchmark measures a separate candidate retrieval path; it does not replace the local baseline or establish a replication contract between local memory and the shared corpus. The canonical shared Agent/Worker corpus store remains unresolved under [ADR-0001](ADR_0001_CANONICAL_KNOWLEDGE_STORE.md).
+
 ## RUSA CPU-first alignment
 
 - Start prose chunking at the RusaAi architecture baseline of 400–600 tokens.

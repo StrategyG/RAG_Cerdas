@@ -77,12 +77,14 @@ MASTER_CONTEXT.md is project operating context, not product knowledge, and is ex
 
 ## 6. Canonical-store and schema boundary
 
-The current repositories contain different operational knowledge implementations:
+The supplied Architecture v2.0 and CPU Deployment v1.0 documents define SQLite for device-local metadata/state, SQLite FTS5 for local full-text search, and optional vector search after benchmarking. The documents do not define a replication contract that makes this local store the shared 5M corpus.
+
+The repositories also contain two distinct PostgreSQL knowledge implementations:
 
 - RusaAi main contains an optional PostgreSQL/pgvector knowledge service with tenant_id/collection scope and forced tenant RLS.
 - RAG_Cerdas IM19 contains source-version, provenance, review, approval, job, graph, and 384D embedding structures, but the current IM19 schema has no tenant_id columns or per-tenant RLS predicates; its worker policy is private-role scoped.
 
-ADR-0001 remains **Proposed**. No canonical operational store has been selected. Until the architecture, security, data-governance, and operations owners approve a superseding ADR:
+ADR-0001 remains **Proposed**. No canonical shared Agent/Worker corpus store has been selected. The local SQLite/FTS5 baseline remains a separate device-local runtime concern. Until the architecture, security, data-governance, and operations owners approve a superseding ADR:
 
 - keep both stores isolated;
 - do not dual-write, cross-read, bulk-copy, or cut over;

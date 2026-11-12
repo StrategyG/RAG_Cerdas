@@ -7,7 +7,11 @@
 
 ## 1. Context
 
-The RUSA AI codebase currently contains two distinct knowledge implementations. They are not interchangeable and must not be treated as one database or one production service.
+The architecture and repositories describe three distinct layers. They are not interchangeable and must not be treated as one database or one production service.
+
+### Local device memory baseline — SQLite / FTS5
+
+RusaAi Architecture v2.0 and the CPU Deployment Configuration v1.0 specify SQLite for local metadata and state, SQLite FTS5 for full-text retrieval, durable task/checkpoint state, and vector search as optional after benchmarking. This is the device-local memory/runtime baseline. The supplied documents do not define a replication or synchronization contract from this local store to a shared corpus, and the local baseline does not by itself establish a central 5M Agent/Worker corpus store.
 
 ### Option A — RusaAi rusa_knowledge
 
@@ -41,24 +45,26 @@ RAG_Cerdas's 5 November 2026 validation record describes a connected Supabase pr
 
 ## 2. Decision
 
-**No canonical operational store is selected by this ADR.**
+**No canonical shared Agent/Worker corpus store is selected by this ADR.** The SQLite/FTS5 device-local memory baseline remains the Architecture v2.0 default for local metadata/state and local full-text search; this ADR does not replace it with a remote database.
 
 Until a superseding ADR is approved:
 
-1. Keep rusa_knowledge and im19 isolated.
-2. Do not dual-write, mirror, bulk-copy, or cross-read production knowledge between them.
-3. Do not expose the IM19 schema or retriever as a multi-tenant API.
-4. Do not run production migrations, ingestion, embedding, source mutation, or cutover.
-5. Keep source discovery, candidate, reviewed, approved, embedded, indexed, and published counts separate.
-6. Continue isolated development and disposable/staging validation only, with approved source rights and no secrets/private data in Git.
+1. Preserve SQLite/FTS5 as the documented local runtime baseline.
+2. Keep the optional RusaAi rusa_knowledge PostgreSQL service and RAG_Cerdas IM19 database isolated.
+3. Do not dual-write, mirror, bulk-copy, or cross-read production knowledge between the PostgreSQL stores.
+4. Do not expose the IM19 schema or retriever as a multi-tenant API.
+5. Do not assume a sync/replication path between local SQLite memory and either PostgreSQL store; no such contract is established by the supplied baseline documents.
+6. Do not run production migrations, ingestion, embedding, source mutation, or cutover.
+7. Keep source discovery, candidate, reviewed, approved, embedded, indexed, and published counts separate.
+8. Continue isolated development and disposable/staging validation only, with approved source rights and no secrets/private data in Git.
 
 This is an intentional hold point, not a claim that either implementation is the selected source of truth.
 
 ## 3. Options for the eventual decision
 
-### A. Select IM19 as canonical
+### A. Select IM19 as the shared Agent/Worker corpus store
 
-Required before approval:
+This would not replace the SQLite/FTS5 device-local memory baseline. Required before approval:
 
 - Add tenant and project/access-scope ownership to the IM19 data model, including source connections, source files, versions, chunks, knowledge units, claims/evidence, graph records, embeddings, jobs, approvals, and audit access as appropriate.
 - Derive tenant identity from a verified RusaAi principal or signed service identity; never accept a caller-selected tenant as authority.
@@ -68,9 +74,9 @@ Required before approval:
 - Define how the RusaAi tenant-scoped store is migrated, frozen, or retired without losing authorized data or violating retention obligations.
 - Benchmark GIN/HNSW query plans and end-to-end capacity at the 10K, 50K, 100K, 1M, and 5M gates.
 
-### B. Select RusaAi rusa_knowledge as canonical
+### B. Select RusaAi rusa_knowledge as the shared Agent/Worker corpus store
 
-Required before approval:
+This would not replace the SQLite/FTS5 device-local memory baseline. Required before approval:
 
 - Extend the RusaAi schema and contracts to preserve IM19 source revisions, exact locators, rights/attribution, content hashes, knowledge units, claim-evidence links, review findings, human approval, graph lineage, index generation, and immutable audit state.
 - Keep verified-principal tenant isolation and forced RLS as mandatory invariants.

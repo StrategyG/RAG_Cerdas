@@ -41,11 +41,12 @@ These are implemented capabilities of the IM19 candidate, not proof that its dat
 - Supreme Orchestrator, Planner, Task Decomposer, agent registry, task queue, scheduler, and workflow lifecycle.
 - Policy Engine, Tool Gateway, sandbox, approval, audit, and cross-agent authorization.
 - Memory lifecycle and routing, Context Manager, and shared Model Access Gateway.
-- An optional rusa_knowledge PostgreSQL/pgvector service with tenant-scoped tables, forced RLS, and read-only tenant-authenticated MCP tools.
+- The Architecture v2.0 / CPU Deployment v1.0 local memory baseline: SQLite for metadata/state, SQLite FTS5 for full-text search, durable task/checkpoint state, and optional vector search after benchmarking.
+- An optional rusa_knowledge PostgreSQL/pgvector service with tenant-scoped tables, forced RLS, and read-only tenant-authenticated MCP tools. This optional shared service is distinct from the documented device-local SQLite baseline.
 
 ### Canonical-store hold point
 
-The RUSA AI 5M expansion plan leaves the canonical operational schema/store as an open decision. The two implementations have different security and lifecycle models: the current RusaAi knowledge store has tenant columns and forced tenant RLS; the current IM19 migration has private worker/approver roles and broad private-role policies, but no tenant columns or per-tenant predicates. Neither may be silently designated as canonical by this implementation roadmap.
+The RUSA AI 5M expansion plan leaves the canonical shared corpus schema/store as an open decision. The local SQLite/FTS5 baseline is for device-local metadata, state, and search; the supplied documents do not define it as a shared 5M corpus or specify cross-device replication. The two PostgreSQL implementations also have different security and lifecycle models: the current RusaAi knowledge store has tenant columns and forced tenant RLS; the current IM19 migration has private worker/approver roles and broad private-role policies, but no tenant columns or per-tenant predicates. Neither PostgreSQL store may be silently designated as canonical by this implementation roadmap.
 
 Use [ADR-0001](ADR_0001_CANONICAL_KNOWLEDGE_STORE.md) to evaluate the options. Until an approved decision and migration plan exist, keep the databases isolated, avoid dual writes, and do not expose IM19 as a multi-tenant API. If IM19 is eventually selected, RusaAi may consume it through a thin authenticated adapter/client after the versioned contract and tenant boundary pass review.
 
