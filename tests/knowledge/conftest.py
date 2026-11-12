@@ -79,6 +79,7 @@ def database(pg_dsn):
     from im19.storage.postgres import PostgresStore
 
     with psycopg.connect(pg_dsn) as conn:
+        conn.execute("DROP SCHEMA IF EXISTS im19_security CASCADE")
         conn.execute("DROP SCHEMA IF EXISTS im19 CASCADE")
         conn.execute("CREATE SCHEMA IF NOT EXISTS extensions")
         conn.execute("CREATE EXTENSION IF NOT EXISTS vector SCHEMA extensions")
