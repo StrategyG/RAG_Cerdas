@@ -46,10 +46,7 @@ class PostgresStore:
                 "EXISTS(SELECT 1 FROM pg_catalog.pg_auth_members m "
                 "WHERE m.member=r.oid AND m.roleid=pg_catalog.to_regrole('im19_worker')::oid "
                 "AND NOT m.admin_option) AS direct_worker_member,"
-                "EXISTS(SELECT 1 FROM im19_security.worker_storage_nodes n "
-                "WHERE n.database_role_oid=r.oid AND n.database_login_role=session_user "
-                "AND NOT EXISTS(SELECT 1 FROM im19_security.worker_storage_node_revocations x "
-                "WHERE x.database_role_oid=n.database_role_oid)) AS storage_node_registered "
+                "im19.is_registered_storage_node() AS storage_node_registered "
                 "FROM pg_catalog.pg_roles r WHERE r.rolname=session_user"
             ).fetchone()
             if (
