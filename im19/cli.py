@@ -12,11 +12,12 @@ from im19.knowledge_mining.dropbox_discovery import DropboxClient, DropboxDiscov
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
-        "command", choices=["health", "discover", "pilot", "worker", "search"]
+        "command", choices=["health", "discover", "pilot", "worker", "search", "purge-db", "purge-local"]
     )
     p.add_argument("--secret-provider", choices=["mounted", "colab"], default="mounted")
     p.add_argument("--connection-id")
     p.add_argument("--document-id")
+    p.add_argument("--purge-request-id")
     p.add_argument("--query")
     p.add_argument("--filters", default="{}")
     p.add_argument("--max-pages", type=int, default=1)
@@ -30,6 +31,47 @@ def main():
     try:
         store = PostgresStore(secrets.get("IM19_DATABASE_DSN"))
         store.check_role()
+        if args.command == "purge-db":
+            if not args.purge_request_id:
+                p.error("--purge-request-id required")
+            result = store.execute_approved_source_purge(args.purge_request_id)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0 if result.get("status") in {"database_purged", "completed"} else 2
+        if args.command == "purge-local":
+            from im19.purge import purge_local_artifacts
+
+            targets = store.claim_local_purge_targets()
+            completed = 0
+            failed = 0
+            blob_removed = 0
+            temp_removed = 0
+            for target in targets:
+                try:
+                    receipt = purge_local_artifacts(
+                        os.getenv("IM19_WORKDIR", "/data/im19"),
+                        str(target["document_version_id"]),
+                        target["storage_node_id"],
+                    )
+                    status = store.record_local_purge_receipt(
+                        target["request_id"],
+                        target["document_version_id"],
+                        receipt["blob_files_removed"],
+                        receipt["temp_files_removed"],
+                    )
+                    completed += 1
+                    blob_removed += receipt["blob_files_removed"]
+                    temp_removed += receipt["temp_files_removed"]
+                except PipelineError:
+                    failed += 1
+            print(json.dumps({
+                "status": "completed" if failed == 0 else "partial",
+                "targets_processed": completed + failed,
+                "receipts_recorded": completed,
+                "failed": failed,
+                "blob_files_removed": blob_removed,
+                "temp_files_removed": temp_removed,
+            }))
+            return 0 if failed == 0 else 2
         if args.command == "health":
             with store.tx() as conn:
                 rows = conn.execute(
