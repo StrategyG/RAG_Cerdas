@@ -603,7 +603,7 @@ CREATE TRIGGER embeddings_purge_write_gate BEFORE INSERT OR UPDATE ON im19.embed
 FOR EACH ROW EXECUTE FUNCTION im19_security.purge_content_write_gate();
 
 CREATE FUNCTION im19_security.purge_job_write_gate()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $job$
 DECLARE v_state text;
 BEGIN
   IF TG_OP='UPDATE' AND NEW.status='blocked'
@@ -622,7 +622,7 @@ BEGIN
     RAISE EXCEPTION 'cannot queue work for quarantined or purge-requested document version';
   END IF;
   RETURN NEW;
-END $;
+END $job$;
 
 CREATE TRIGGER ingestion_jobs_purge_write_gate
 BEFORE INSERT OR UPDATE ON im19.ingestion_jobs
