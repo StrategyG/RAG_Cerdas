@@ -443,7 +443,7 @@ def test_source_rights_lookup_uses_document_version_not_mutable_source_head(data
     with database.tx() as conn:
         conn.execute(
             "UPDATE im19.source_files SET revision='next-revision',content_hash=%s WHERE id=%s",
-            (digest(b"next revision"), before["source_file_id"]),
+            (digest("next revision"), before["source_file_id"]),
         )
     assert database.load(doc)["rights_approved"] is True
     with pytest.raises(PipelineError, match="SOURCE_SUPERSEDED"):
