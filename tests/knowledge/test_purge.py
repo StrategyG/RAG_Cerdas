@@ -280,7 +280,7 @@ def test_purge_requires_two_registered_reviewers_and_removes_exact_version_conte
         assert version["classification"] is None
         assert version["review"] is None
         assert version["content_sha256"] is None
-        assert source["source_file_id"] == f"im19-purged:{source['source_file_id'].split(':')[-1]}" or source["source_file_id"].startswith("im19-purged:")
+        assert source["source_file_id"].startswith("im19-purged:")
         assert source["path"] == "[purged]"
         assert source["filename"] == "[purged]"
         assert source["size"] == 0
