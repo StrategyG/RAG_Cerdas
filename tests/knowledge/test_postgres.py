@@ -709,7 +709,7 @@ def test_reviewer_registration_rejects_any_additional_group_membership(database)
 
     try:
         with pytest.raises(
-            psycopg.errors.RaiseException,
+            psycopg.errors.InsufficientPrivilege,
             match="reviewer LOGIN must inherit only im19_approver",
         ):
             with database.tx() as conn:
