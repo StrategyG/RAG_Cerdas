@@ -103,6 +103,10 @@ class Orchestrator:
                 raise PipelineError("SUPERSEDED", "SOURCE_INELIGIBLE")
             if not 0 < doc["source_metadata"]["size"] <= 64 * 1024**2:
                 raise PipelineError("NEEDS_HUMAN_REVIEW", "FILE_SIZE_QUOTA")
+            if not doc["rights_approved"]:
+                raise PipelineError(
+                    "NEEDS_HUMAN_REVIEW", "SOURCE_RIGHTS_REVIEW_REQUIRED"
+                )
             if not doc["access_authorized"]:
                 raise PipelineError(
                     "NEEDS_HUMAN_REVIEW", "ACCESS_AUTHORIZATION_REQUIRED"

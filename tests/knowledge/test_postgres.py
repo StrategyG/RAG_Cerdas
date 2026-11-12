@@ -46,6 +46,45 @@ def discover(
     return str(row["id"]), connection_id
 
 
+def approve_source_rights(
+    store,
+    document_id,
+    *,
+    decision="approve",
+    storage_allowed=None,
+    embedding_allowed=None,
+    reviewer_id="fixture-rights-reviewer",
+):
+    """Append a test-only human source-rights decision for the exact current revision."""
+    if storage_allowed is None:
+        storage_allowed = decision == "approve"
+    if embedding_allowed is None:
+        embedding_allowed = decision == "approve"
+    with store.tx() as conn:
+        source = conn.execute(
+            "SELECT f.id,f.revision,f.content_hash FROM im19.document_versions v "
+            "JOIN im19.source_files f ON f.id=v.source_file_id WHERE v.id=%s",
+            (document_id,),
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO im19.source_rights_reviews("
+            "source_file_id,revision,content_hash,decision,rights_basis,license_identifier,"
+            "attribution,evidence_reference,rationale,storage_allowed,embedding_allowed,"
+            "derivative_notes_allowed,reviewer_id) "
+            "VALUES(%s,%s,%s,%s,'owner_attestation',NULL,'Synthetic test fixture',"
+            "'test-fixture://source-rights','Synthetic fixture rights decision',%s,%s,false,%s)",
+            (
+                source["id"],
+                source["revision"],
+                source["content_hash"],
+                decision,
+                storage_allowed,
+                embedding_allowed,
+                reviewer_id,
+            ),
+        )
+
+
 def worker_store(store):
     with store.tx() as conn:
         conn.execute(
@@ -80,6 +119,7 @@ def test_migration_creates_entities_rls_and_publication_gate(database):
             "embeddings",
             "ingestion_jobs",
             "audit_events",
+            "source_rights_reviews",
         }
         assert {t["relname"] for t in tables} == required
         assert all(t["relrowsecurity"] and t["relforcerowsecurity"] for t in tables)
@@ -96,6 +136,12 @@ def test_migration_creates_entities_rls_and_publication_gate(database):
         assert lexical_index is not None
         assert "using gin" in lexical_index["indexdef"].lower()
         assert "to_tsvector" in lexical_index["indexdef"].lower()
+        assert conn.execute(
+            "SELECT has_table_privilege('im19_worker','im19.source_rights_reviews','INSERT') AS p"
+        ).fetchone()["p"] is False
+        assert conn.execute(
+            "SELECT has_table_privilege('im19_approver','im19.source_rights_reviews','INSERT') AS p"
+        ).fetchone()["p"] is True
 
 
 def test_cursor_and_enqueue_are_atomic_and_replay_idempotent(database):
@@ -356,3 +402,45 @@ def test_database_rejects_chunk_content_absent_from_its_page(database):
     with pytest.raises(psycopg.errors.RaiseException, match="chunk page provenance"):
         database.save_extraction(job, [page], [invented])
     assert not database.extraction(doc)[0]  # Whole extraction transaction rolls back.
+
+
+def test_source_rights_are_revision_bound_and_latest_decision_wins(database):
+    doc, cid = discover(database)
+    approve_source_rights(database, doc)
+    assert database.load(doc)["rights_approved"] is True
+
+    approve_source_rights(database, doc, decision="reject")
+    assert database.load(doc)["rights_approved"] is False
+
+    # A new Dropbox revision/hash is not covered by the old approval.
+    new_doc, _ = discover(
+        database,
+        data=b"new source revision",
+        rev="def456",
+        connection_id=cid,
+    )
+    assert database.load(new_doc)["rights_approved"] is False
+
+
+def test_source_rights_reviews_are_append_only_and_worker_cannot_write(database):
+    doc, _ = discover(database)
+    approve_source_rights(database, doc)
+    worker = worker_store(database)
+    source = database.load(doc)
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with worker.tx() as conn:
+            conn.execute(
+                "INSERT INTO im19.source_rights_reviews("
+                "source_file_id,revision,content_hash,decision,rights_basis,attribution,"
+                "evidence_reference,rationale,storage_allowed,embedding_allowed,reviewer_id) "
+                "VALUES(%s,%s,%s,'approve','owner_attestation','fake','fake','fake',true,true,'worker')",
+                (source["source_file_id"], source["revision"], source["source_content_hash"]),
+            )
+
+    with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
+        with database.tx() as conn:
+            conn.execute(
+                "UPDATE im19.source_rights_reviews SET rationale='tampered' WHERE source_file_id=%s",
+                (source["source_file_id"],),
+            )

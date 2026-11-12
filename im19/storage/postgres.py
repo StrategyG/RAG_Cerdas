@@ -221,8 +221,14 @@ class PostgresStore:
     def load(self, document_id):
         with self.tx() as conn:
             row = conn.execute(
-                "SELECT v.*,f.metadata AS source_metadata,f.extension,f.access_authorized,f.deleted,f.filename,f.source_uri "
-                "FROM im19.document_versions v JOIN im19.source_files f ON f.id=v.source_file_id WHERE v.id=%s",
+                "SELECT v.*,f.metadata AS source_metadata,f.extension,f.access_authorized,f.deleted,f.filename,f.source_uri,"
+                "COALESCE((rights.decision='approve' AND rights.storage_allowed AND rights.embedding_allowed),false) AS rights_approved,"
+                "rights.id AS rights_review_id,rights.decision AS rights_decision "
+                "FROM im19.document_versions v JOIN im19.source_files f ON f.id=v.source_file_id "
+                "LEFT JOIN LATERAL (SELECT r.id,r.decision,r.storage_allowed,r.embedding_allowed "
+                "FROM im19.source_rights_reviews r WHERE r.source_file_id=f.id AND r.revision=f.revision "
+                "AND r.content_hash=f.content_hash ORDER BY r.created_at DESC,r.id DESC LIMIT 1) rights ON true "
+                "WHERE v.id=%s",
                 (document_id,),
             ).fetchone()
             return row
@@ -557,14 +563,18 @@ class PostgresStore:
             authorized = conn.execute(
                 "UPDATE im19.document_versions v SET state='DISCOVERED',checkpoint=v.checkpoint-'error_code' "
                 "FROM im19.source_files f WHERE v.source_file_id=f.id AND f.access_authorized AND NOT f.deleted "
-                "AND v.state='NEEDS_HUMAN_REVIEW' AND v.checkpoint->>'error_code'='ACCESS_AUTHORIZATION_REQUIRED' RETURNING v.id"
+                "AND v.state='NEEDS_HUMAN_REVIEW' "
+                "AND v.checkpoint->>'error_code' IN ('ACCESS_AUTHORIZATION_REQUIRED','SOURCE_RIGHTS_REVIEW_REQUIRED') "
+                "AND (SELECT r.decision='approve' AND r.storage_allowed AND r.embedding_allowed "
+                "FROM im19.source_rights_reviews r WHERE r.source_file_id=f.id AND r.revision=f.revision "
+                "AND r.content_hash=f.content_hash ORDER BY r.created_at DESC,r.id DESC LIMIT 1) IS TRUE RETURNING v.id"
             ).fetchall()
             for row in authorized:
                 conn.execute(
                     "UPDATE im19.ingestion_jobs SET status='queued',attempts=0,available_at=now() WHERE document_id=%s AND status='blocked'",
                     (row["id"],),
                 )
-                self.audit(conn, row["id"], "source_access_approved", {})
+                self.audit(conn, row["id"], "source_processing_gate_approved", {})
             rows = conn.execute(
                 "UPDATE im19.ingestion_jobs j SET status='queued',attempts=0,available_at=now() FROM im19.document_versions v "
                 "JOIN im19.human_approvals a ON a.review_run_id=(v.checkpoint->>'review_run_id')::uuid "

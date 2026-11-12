@@ -92,3 +92,10 @@ The production lexical score is PostgreSQL `ts_rank_cd` over the `simple` text-s
 ### Evidence limits
 
 This CI run proves the stated disposable-database and regression checks only. It does not prove that the GIN index is selected by the planner for every production filter, nor does it provide representative `EXPLAIN (ANALYZE, BUFFERS)`, 100K/500K/1M/5M capacity results, target Supabase/Dropbox/model verification, tenant-aware public authorization, or 24/7 deployment evidence. Production release remains **BLOCKED** until all six gates pass.
+
+
+## 12 November 2026 — source rights review gate submitted
+
+A separate review branch adds an append-only source-rights ledger tied to the exact source file, Dropbox revision, and content hash. The worker requires both operational processing authorization and a human rights decision allowing source storage and embedding. The latest decision controls; a new source revision/hash is not covered by an earlier approval.
+
+The worker can read rights decisions but cannot insert, update, or delete them. A database publication trigger independently checks the latest approved rights decision. This change is under CI review; target staging validation is still required. It does not authorize bulk ingestion, full-text archival where rights are unclear, or a notes-only derivative workflow.
