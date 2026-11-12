@@ -7,7 +7,12 @@ import psycopg
 from im19.orchestrator import Orchestrator
 from im19.retrieval import HybridRetriever
 from im19.knowledge_review.review_engine import WEIGHTS
-from .test_postgres import discover, worker_store
+from .test_postgres import (
+    authorize_and_approve_source_rights,
+    approve_source_rights,
+    discover,
+    worker_store,
+)
 from .test_processing import pdf
 
 
@@ -54,8 +59,7 @@ def test_full_pipeline_requires_separate_approval_then_publishes_searchable_cita
 ):
     data = pdf("Risk management protects capital.")
     doc, cid = discover(database, data=data)
-    with database.tx() as conn:
-        conn.execute("UPDATE im19.source_files SET access_authorized=true")
+    authorize_and_approve_source_rights(database, doc)
     worker = worker_store(database)
     dropbox = Mock()
     dropbox.download.return_value = data
@@ -82,7 +86,17 @@ def test_full_pipeline_requires_separate_approval_then_publishes_searchable_cita
         or "book.pdf" in result["evidence"][0]["title"]
     )
     assert result["evidence"][0]["verification_status"] == "NOT_EXTERNALLY_VERIFIED"
+    # A later hold quarantines the exact published version from retrieval.
+    approve_source_rights(database, doc, decision="hold")
+    assert database.load(doc)["state"] == "QUARANTINED"
+    assert retriever.search("risk management")["status"] == "INSUFFICIENT_EVIDENCE"
     assert retriever.search("astronomy telescope")["status"] == "INSUFFICIENT_EVIDENCE"
+    with database.tx() as conn:
+        assert conn.execute(
+            "SELECT 1 FROM im19.audit_events WHERE document_id=%s "
+            "AND event_type='source_rights_publication_quarantined'",
+            (doc,),
+        ).fetchone() is not None
     assert (
         retriever.search("risk", filters={"category": "Psikologi"})["status"]
         == "INSUFFICIENT_EVIDENCE"
@@ -101,6 +115,7 @@ def test_auth_blocked_preserves_stage_and_does_not_publish(database, tmp_path):
     doc, _ = discover(database, data)
     with database.tx() as conn:
         conn.execute("UPDATE im19.source_files SET access_authorized=true")
+    approve_source_rights(database, doc)
     dropbox = Mock()
     dropbox.download.side_effect = PipelineError("AUTH_BLOCKED", "DROPBOX_UNAUTHORIZED")
     runner = Orchestrator(
@@ -115,6 +130,7 @@ def test_multibatch_embedding_readback_and_source_hash_dedup(database):
     from im19.contracts import Chunk, Page, digest
 
     doc, _ = discover(database)
+    authorize_and_approve_source_rights(database, doc)
     job = database.claim("worker")
     pages = [Page(f"pdf:page:{i}", f"Risk management {i}", i) for i in (1, 2)]
     chunks = [
@@ -172,7 +188,12 @@ def test_unapproved_source_is_not_downloaded_and_resumes_after_separate_authoriz
     )
     runner.run_one(doc)
     assert database.load(doc)["state"] == "NEEDS_HUMAN_REVIEW"
+    assert database.load(doc)["checkpoint"]["error_code"] == "SOURCE_RIGHTS_REVIEW_REQUIRED"
     assert not dropbox.download.called
+
+    # Rights approval alone is insufficient while operational processing access is absent.
+    approve_source_rights(database, doc)
+    assert database.resume_approved() == 0
     with database.tx() as conn:
         conn.execute("UPDATE im19.source_files SET access_authorized=true")
     assert database.resume_approved() == 1

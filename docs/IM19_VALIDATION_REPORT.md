@@ -123,3 +123,9 @@ The harness requires a restricted im19_worker identity, enforces read-only trans
 - [Institutional RAG checks](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43155733737) passed **203 tests in 4.79 seconds**.
 - Offline unit tests cover percentile calculation, EXPLAIN plan parsing, and the lexical/vector SQL templates.
 - The benchmark command has **not** been run against a staging database. No measured index-selection, p50/p95, scale, or capacity result is claimed.
+
+## Source-rights gate — 12 November 2026
+
+The source-rights review branch adds an append-only decision ledger bound to the exact document-version source revision and content hash. The worker rechecks rights before download and each processing stage; persistence methods recheck inside their database transactions. The database blocks direct INSERT of PUBLISHED versions, checks the exact revision/hash on publication, and quarantines a previously published version from retrieval when a later hold/reject is recorded.
+
+Quarantine is not deletion: stored text, chunks, knowledge units, embeddings, and downloaded blobs may remain. Reviewer identity is not authenticated by the current migration; reviewer_id is operator-supplied. A verified reviewer registry and audited purge/retention workflow remain production blockers. No live migration, source ingestion, or deployment is claimed by this code change.

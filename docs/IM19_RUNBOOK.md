@@ -3,7 +3,7 @@
 ## Prerequisites and staging setup
 
 1. Review `IM19_AUDIT_20261025.md`, migration and privileges. Take a backup and prove restore in staging. New migration assumes pgvector is already installed in `extensions`; it deliberately fails otherwise. Never run a migration from worker startup.
-2. On an isolated staging DB, apply **only** `20261025010000_im19_knowledge_intelligence.sql` after its prerequisite. Existing legacy migrations need a historical `rag` base and must not be blindly applied to an empty DB.
+2. On an isolated, backup-restored staging DB, apply the IM19 migrations in order: `20261025010000_im19_knowledge_intelligence.sql`, `20261112090000_im19_lexical_retrieval_index.sql`, then `20261112093000_im19_source_rights_reviews.sql`. Review the GIN index build plan for any populated schema; do not apply large index builds during service hours. Existing legacy migrations need a historical `rag` base and must not be blindly applied to an empty DB.
 3. Administrator provisions separate LOGIN credentials inheriting `im19_worker` and `im19_approver`; use certificate-verified TLS. Workers must not inherit approver/admin roles. Store DSN in mounted `im19_database_dsn`; put Dropbox app key/secret/refresh token in secret-manager mounts with their lowercase names. Do not commit them.
 4. Register a Dropbox OAuth app with read scopes only and approved app-folder access. Complete official OAuth consent with `token_access_type=offline`; store its issued refresh token in the secret manager. The worker refreshes existing authorization; it does not fabricate consent or capture credentials. Revocation/rotation occurs through the provider/secret manager, followed by worker restart.
 5. Admin creates a row in `im19.source_connections` with a deliberately approved `root_path` and access scope. Copy its UUID into non-secret configuration. Run `python -m im19.cli health`, then `python -m im19.cli discover --connection-id UUID --max-pages 1` against staging. Discovery writes metadata/cursor only; no source download.
@@ -11,6 +11,7 @@
 7. `python -m im19.cli pilot --document-id UUID` processes only that queued document, stopping at review/publication gates. Add `--enable-ocr` after installing Tesseract/language packs. Inspect source pages, quotes, all review roles, category labels and relationship candidates. AI output remains unverified.
 8. With the separate approver credential, insert a decision into `im19.human_approvals` using the immutable `review_run_id`, accountable `reviewer_id`, `decision` and rationale. Approving a review does not verify factual truth. Worker `resume_approved()` schedules approved held jobs; then rerun the one-document pilot.
 9. Read back pages, units, embeddings, version state and citations; test one deliberately unanswerable query. Build a human-reviewed dataset across categories/OCR/contradictions before calibrating any automation threshold.
+10. A later hold/reject decision quarantines the exact published version and removes it from retrieval, but does not erase its stored text/embeddings or downloaded blob. Do not treat quarantine as deletion; production remains blocked until the reviewed purge/retention workflow and reviewer-identity mapping are implemented.
 
 ## Worker deployment (after release approval)
 

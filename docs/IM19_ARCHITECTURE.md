@@ -37,6 +37,10 @@ The database independently checks current revision/hash, approved access, stored
 
 The pilot currently requires a human approval for every publication while the quality rubric and risk classifier are uncalibrated. High-risk/unknown cases therefore remain under human oversight. `NOT_EXTERNALLY_VERIFIED` survives approval and publication. A quality score is not a truth probability.
 
+## Source rights gate
+
+IM19 has a separate append-only source-rights ledger. Each decision is bound to the exact document-version source file, revision, and content hash. Operational processing access remains a separate approval. The worker rechecks rights before download and each processing stage, and persistence methods recheck inside their transactions. The database independently checks exact-version rights before publication. A later hold/reject quarantines an already-published version from retrieval. Quarantine does not erase stored text, embeddings, or downloaded blobs; the purge/retention workflow and reviewer identity registry are not implemented. See IM19_SOURCE_RIGHTS.md for the human review procedure and evidence limits.
+
 ## Runtime
 
 Colab is a development/batch runtime only. `python -m im19.cli worker --connection-id UUID` is the persistent worker command after deployment approval. Container example uses a restricted user, CPU/memory limits, read-only root filesystem, model mounts, secret mounts, durable downloads and database checkpoints. It has not been deployed or endurance-tested by this change.
