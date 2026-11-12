@@ -12,6 +12,7 @@ from .test_postgres import (
     approve_source_rights,
     discover,
     worker_store,
+    reviewer_tx,
 )
 from .test_processing import pdf
 
@@ -71,7 +72,7 @@ def test_full_pipeline_requires_separate_approval_then_publishes_searchable_cita
     retriever = HybridRetriever(worker, FixtureEmbedder())
     assert retriever.search("risk management")["status"] == "INSUFFICIENT_EVIDENCE"
     review_id = database.load(doc)["checkpoint"]["review_run_id"]
-    with database.tx() as conn:
+    with reviewer_tx(database, "fixture-human") as conn:
         conn.execute(
             "INSERT INTO im19.human_approvals(review_run_id,reviewer_id,decision,rationale) VALUES(%s,'fixture-human','approve','Synthetic fixture approved')",
             (review_id,),

@@ -79,6 +79,7 @@ def database(pg_dsn):
     from im19.storage.postgres import PostgresStore
 
     with psycopg.connect(pg_dsn) as conn:
+        conn.execute("DROP SCHEMA IF EXISTS im19_security CASCADE")
         conn.execute("DROP SCHEMA IF EXISTS im19 CASCADE")
         conn.execute("CREATE SCHEMA IF NOT EXISTS extensions")
         conn.execute("CREATE EXTENSION IF NOT EXISTS vector SCHEMA extensions")
@@ -86,6 +87,8 @@ def database(pg_dsn):
             "supabase/migrations/20261025010000_im19_knowledge_intelligence.sql",
             "supabase/migrations/20261112090000_im19_lexical_retrieval_index.sql",
             "supabase/migrations/20261112093000_im19_source_rights_reviews.sql",
+            "supabase/migrations/20261112094000_im19_reviewer_identity_registry.sql",
+            "supabase/migrations/20261112100000_im19_reviewer_role_membership_guard.sql",
         )
         for migration_path in migration_paths:
             conn.execute(Path(migration_path).read_text())

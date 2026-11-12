@@ -1,9 +1,9 @@
 name: Institutional RAG checks
 on:
   push:
-    branches: [main, codespaces-institutional-rag]
+    branches: [main, codespaces-institutional-rag, p0/reviewer-principal-binding]
   pull_request:
-    branches: [main, codespaces-institutional-rag]
+    branches: [main, codespaces-institutional-rag, p0/reviewer-principal-binding]
   workflow_dispatch:
 
 permissions:
