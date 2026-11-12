@@ -177,6 +177,13 @@ def worker_store(store):
             "DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='im19_test_login') THEN CREATE ROLE im19_test_login LOGIN; END IF; END $$"
         )
         conn.execute("GRANT im19_worker TO im19_test_login")
+        conn.execute(
+            "INSERT INTO im19_security.worker_storage_nodes("
+            "database_role_oid,database_login_role,storage_node_id) "
+            "SELECT pg_catalog.to_regrole('im19_test_login')::oid,"
+            "'im19_test_login','fixture-storage-node' "
+            "ON CONFLICT(database_role_oid) DO NOTHING"
+        )
     config = conninfo_to_dict(store.dsn)
     config["user"] = "im19_test_login"
     return PostgresStore(make_conninfo(**config), allow_local_test=True)
