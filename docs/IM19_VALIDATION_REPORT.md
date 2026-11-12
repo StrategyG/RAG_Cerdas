@@ -129,3 +129,9 @@ The harness requires a restricted im19_worker identity, enforces read-only trans
 The source-rights review branch adds an append-only decision ledger bound to the exact document-version source revision and content hash. The worker rechecks rights before download and each processing stage; persistence methods recheck inside their database transactions. The database blocks direct INSERT of PUBLISHED versions, checks the exact revision/hash on publication, and quarantines a previously published version from retrieval when a later hold/reject is recorded.
 
 Quarantine is not deletion: stored text, chunks, knowledge units, embeddings, and downloaded blobs may remain. Reviewer identity is not authenticated by the current migration; reviewer_id is operator-supplied. A verified reviewer registry and audited purge/retention workflow remain production blockers. No live migration, source ingestion, or deployment is claimed by this code change.
+
+## Evaluation coverage reporting — 12 November 2026
+
+The evaluator now emits separate `review_coverage` and `evaluation_coverage`, alongside reviewed/unreviewed counts and reasons a case is not score-eligible. The current three-case dataset has no human-reviewed qrels; expected review and evaluation coverage are both 0%, and overall status remains `blocked_no_human_reviewed_labels`.
+
+CI passed 231 tests on PR #13 head `4512c8412ebe2f8e38c8b9feac10a44b2fa59a27`; Deno Edge Function type-check also passed. This validates code behavior only. It does not supply human qrels or retrieval-quality measurements.
