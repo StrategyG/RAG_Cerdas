@@ -761,3 +761,28 @@ def test_reviewer_decisions_reject_group_memberships_granted_after_registration(
                 )
             )
             admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(extra_role)))
+
+def test_reviewer_decisions_reject_transitive_group_membership(database):
+    doc, _ = discover(database)
+    reviewer_id = "fixture-transitive-extra-" + uuid4().hex
+    _ensure_test_reviewer(database, reviewer_id)
+    extra_role = "im19_test_nested_" + uuid4().hex[:16]
+    with psycopg.connect(database.dsn) as admin:
+        admin.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(extra_role)))
+        admin.execute(
+            sql.SQL("GRANT {} TO im19_approver").format(sql.Identifier(extra_role))
+        )
+
+    try:
+        with reviewer_tx(database, reviewer_id, register=False) as conn:
+            with pytest.raises(
+                psycopg.errors.InsufficientPrivilege,
+                match="reviewer LOGIN must inherit only im19_approver",
+            ):
+                _insert_test_rights_decision(conn, doc, reviewer_id)
+    finally:
+        with psycopg.connect(database.dsn) as admin:
+            admin.execute(
+                sql.SQL("REVOKE {} FROM im19_approver").format(sql.Identifier(extra_role))
+            )
+            admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(extra_role)))
