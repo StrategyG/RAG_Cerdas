@@ -241,9 +241,10 @@ class HybridRetriever:
                     "SELECT DISTINCT "
                     + fields
                     + " FROM im19.knowledge_relations rel "
-                    "JOIN im19.knowledge_units src ON src.id=rel.source_id "
-                    "JOIN im19.knowledge_units tgt ON tgt.id=rel.target_id "
-                    "JOIN im19.chunks c ON c.id=ANY(tgt.source_chunk_ids) "
+                    "JOIN im19.knowledge_nodes src ON src.id=rel.source_id "
+                    "JOIN im19.knowledge_nodes tgt ON tgt.id=rel.target_id AND tgt.node_type='Claim' "
+                    "JOIN im19.knowledge_units tgt_unit ON tgt_unit.id=tgt.id "
+                    "JOIN im19.chunks c ON c.id=ANY(tgt_unit.source_chunk_ids) "
                     "JOIN im19.document_versions v ON v.id=c.document_id "
                     "JOIN im19.source_files f ON f.id=v.source_file_id "
                     "WHERE rel.review_status='reviewed' AND src.document_id=ANY(%s) AND "

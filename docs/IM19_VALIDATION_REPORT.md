@@ -92,3 +92,8 @@ The production lexical score is PostgreSQL `ts_rank_cd` over the `simple` text-s
 ### Evidence limits
 
 This CI run proves the stated disposable-database and regression checks only. It does not prove that the GIN index is selected by the planner for every production filter, nor does it provide representative `EXPLAIN (ANALYZE, BUFFERS)`, 100K/500K/1M/5M capacity results, target Supabase/Dropbox/model verification, tenant-aware public authorization, or 24/7 deployment evidence. Production release remains **BLOCKED** until all six gates pass.
+
+
+### Graph-expansion SQL correction
+
+A source-schema review found that knowledge_relations.source_id and target_id reference knowledge_nodes, not knowledge_units. The previous graph-expansion query joined relation endpoints directly to knowledge_units, which was incompatible with the declared foreign keys. The query now joins both endpoints through knowledge_nodes and expands only target nodes of type Claim through their matching knowledge_units/source_chunk_ids. A regression test asserts the declared schema path. This is a code/schema compatibility correction; the new CI run is the required validation for this commit.
