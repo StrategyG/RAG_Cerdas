@@ -73,3 +73,53 @@ No before/after performance improvement, readiness score or corpus quality perce
 | F Production release | BLOCKED | Reviewed migration/backup/staging, built image, monitoring/alerts, restore/rollback rehearsal, endurance test and release approval |
 
 All six must pass before a production-ready declaration. This branch intentionally provides reviewable code, migrations and evidence boundaries without applying production changes.
+
+
+## 12 November 2026 — indexed lexical retrieval implementation
+
+The first scale-oriented retrieval change is submitted in [PR #19](https://github.com/StrategyG/RAG_Cerdas/pull/19).
+
+- Commit: `a47fbd9c703a36c67662987a8475d4d06ca8489b`.
+- GitHub Actions: [Institutional RAG checks](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43141774861) — **199 passed in 5.35s**, no failed or skipped tests reported by the run.
+- The disposable PostgreSQL/pgvector test setup applied the additive IM19 GIN lexical-index migration.
+- Migration tests verified the GIN index definition; end-to-end tests exercised the updated lexical/vector/RRF retrieval path and citation behavior.
+- A new unit test verifies that the production retriever does not call the Python BM25 helper, does not count/materialize the full corpus, bounds candidate results, and embeds the query before opening a database transaction.
+
+### Implementation semantics
+
+The production lexical score is PostgreSQL `ts_rank_cd` over the `simple` text-search configuration. It is **not BM25**. The standalone Python `bm25()` function remains only as a small-corpus reference helper for unit tests. Dense retrieval uses the existing pgvector HNSW index; up to 50 lexical and 50 dense candidates are fused using RRF.
+
+### Evidence limits
+
+This CI run proves the stated disposable-database and regression checks only. It does not prove that the GIN index is selected by the planner for every production filter, nor does it provide representative `EXPLAIN (ANALYZE, BUFFERS)`, 100K/500K/1M/5M capacity results, target Supabase/Dropbox/model verification, tenant-aware public authorization, or 24/7 deployment evidence. Production release remains **BLOCKED** until all six gates pass.
+
+
+### Graph-expansion SQL correction
+
+A source-schema review found that knowledge_relations.source_id and target_id reference knowledge_nodes, not knowledge_units. The previous graph-expansion query joined relation endpoints directly to knowledge_units, which was incompatible with the declared foreign keys. The query now joins both endpoints through knowledge_nodes and expands only target nodes of type Claim through their matching knowledge_units/source_chunk_ids. A regression test asserts the declared schema path. This is a code/schema compatibility correction; the new CI run is the required validation for this commit.
+
+
+### Exact-head regression validation — 12 November 2026
+
+- Commit: \`615713b953a705bac3ab42f4bb1950c69125bb5e\`.
+- [Institutional RAG checks](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43154410922) completed successfully.
+- Unit tests: **200 passed in 6.00 seconds**.
+- The run includes the graph-expansion regression asserting that relation endpoints join through im19.knowledge_nodes and target Claim nodes resolve through im19.knowledge_units.
+- No production database migration, live ingestion, source mutation, cutover, or deployment was performed.
+
+
+### Read-only scale benchmark harness added
+
+A manual benchmark command is now available in scripts/benchmark_im19_retrieval.py, with implementation in im19/benchmark.py and offline unit tests in tests/knowledge/test_benchmark.py.
+
+The harness requires a restricted im19_worker identity, enforces read-only transactions, requires TLS verify-full except for explicitly allowed loopback tests, reports PostgreSQL planner row estimates rather than full COUNT(*) scans, and captures EXPLAIN (ANALYZE, BUFFERS) plus p50/p95 query latency for the lexical and dense candidate paths.
+
+**Not run against staging yet.** No scale, latency, index-selection, relevance, tenant-isolation, or production-capacity result is claimed. The synthetic unit vector is for access-path inspection only, not retrieval quality.
+
+
+### Exact-head benchmark harness CI validation — 12 November 2026
+
+- Code commit: \`a95363c4d2402a6394da5d9f84e0d12688e048f5\`.
+- [Institutional RAG checks](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43155733737) passed **203 tests in 4.79 seconds**.
+- Offline unit tests cover percentile calculation, EXPLAIN plan parsing, and the lexical/vector SQL templates.
+- The benchmark command has **not** been run against a staging database. No measured index-selection, p50/p95, scale, or capacity result is claimed.
