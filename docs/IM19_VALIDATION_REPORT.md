@@ -73,3 +73,22 @@ No before/after performance improvement, readiness score or corpus quality perce
 | F Production release | BLOCKED | Reviewed migration/backup/staging, built image, monitoring/alerts, restore/rollback rehearsal, endurance test and release approval |
 
 All six must pass before a production-ready declaration. This branch intentionally provides reviewable code, migrations and evidence boundaries without applying production changes.
+
+
+## 12 November 2026 — indexed lexical retrieval implementation
+
+The first scale-oriented retrieval change is submitted in [PR #19](https://github.com/StrategyG/RAG_Cerdas/pull/19).
+
+- Commit: `a47fbd9c703a36c67662987a8475d4d06ca8489b`.
+- GitHub Actions: [Institutional RAG checks](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43141774861) — **199 passed in 5.35s**, no failed or skipped tests reported by the run.
+- The disposable PostgreSQL/pgvector test setup applied the additive IM19 GIN lexical-index migration.
+- Migration tests verified the GIN index definition; end-to-end tests exercised the updated lexical/vector/RRF retrieval path and citation behavior.
+- A new unit test verifies that the production retriever does not call the Python BM25 helper, does not count/materialize the full corpus, bounds candidate results, and embeds the query before opening a database transaction.
+
+### Implementation semantics
+
+The production lexical score is PostgreSQL `ts_rank_cd` over the `simple` text-search configuration. It is **not BM25**. The standalone Python `bm25()` function remains only as a small-corpus reference helper for unit tests. Dense retrieval uses the existing pgvector HNSW index; up to 50 lexical and 50 dense candidates are fused using RRF.
+
+### Evidence limits
+
+This CI run proves the stated disposable-database and regression checks only. It does not prove that the GIN index is selected by the planner for every production filter, nor does it provide representative `EXPLAIN (ANALYZE, BUFFERS)`, 100K/500K/1M/5M capacity results, target Supabase/Dropbox/model verification, tenant-aware public authorization, or 24/7 deployment evidence. Production release remains **BLOCKED** until all six gates pass.

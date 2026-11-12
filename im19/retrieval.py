@@ -18,7 +18,6 @@ import re
 from im19.contracts import PipelineError
 
 EMBED_MODEL = "intfloat/multilingual-e5-small"
-LEXICAL_CONFIG = "pg_catalog.simple"
 LEXICAL_CANDIDATE_LIMIT = 50
 DENSE_CANDIDATE_LIMIT = 50
 

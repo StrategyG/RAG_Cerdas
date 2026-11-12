@@ -1,6 +1,6 @@
 # IM19 scalable retrieval implementation note
 
-**Status:** Implemented on a review branch; CI and representative capacity tests pending.
+**Status:** Implemented on a review branch; CI passed (199 tests, 5.35s); representative capacity and target-staging tests pending.
 
 ## Change
 
