@@ -78,6 +78,21 @@ BEGIN
   NEW.registered_at := pg_catalog.clock_timestamp();
   NEW.registered_by := session_user;
 
+  -- Serialize registrations for the same reviewer ID to prevent concurrent duplicate active bindings.
+  PERFORM pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(NEW.reviewer_id, 0)
+  );
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_auth_members membership
+    WHERE membership.member=NEW.database_role_oid
+      AND membership.roleid=pg_catalog.to_regrole('im19_approver')::oid
+      AND membership.admin_option
+  ) THEN
+    RAISE EXCEPTION 'reviewer LOGIN must not have admin option on im19_approver';
+  END IF;
+
   IF EXISTS (
     SELECT 1
     FROM im19_security.reviewer_identities i
