@@ -10,8 +10,8 @@ It is a **read-only database benchmark**, not a production-capacity certificate.
 
 - Run only against an explicitly approved disposable or staging database.
 - The script requires the restricted im19_worker database role, rejects superuser/BYPASSRLS/approver roles, sets the session read-only, and marks every benchmark transaction READ ONLY.
-- It requires sslmode=verify-full unless --allow-local-test is explicitly used for a disposable local test database.
-- It does not apply migrations, change source records, create/drop indexes, claim jobs, or export excerpts.
+- It requires sslmode=verify-full unless --allow-local-test is explicitly used for a loopback or Unix-socket disposable database.
+- It does not apply migrations, change source records, create/drop indexes, claim jobs, or write excerpts to the report.
 - It reports planner row estimates rather than running full-table COUNT(*) scans.
 - Do not point it at production without a separate change approval, query-window approval, and resource review.
 
@@ -26,23 +26,13 @@ It is a **read-only database benchmark**, not a production-capacity certificate.
 
 Default mode uses a synthetic normalized unit vector. It is suitable for checking whether the database can plan and execute the HNSW access path, but it is not a relevance or quality test.
 
-\`\`\`bash
-python scripts/benchmark_im19_retrieval.py \\
-  --query "retrieval benchmark" \\
-  --warmup 3 \\
-  --iterations 20 \\
-  --output im19-retrieval-benchmark.json
-\`\`\`
+    python scripts/benchmark_im19_retrieval.py --query "retrieval benchmark" --warmup 3 --iterations 20 --output im19-retrieval-benchmark.json
 
-For a representative query vector, provide a JSON array of exactly 384 finite normalized values:
+For a representative query vector, provide a JSON file containing exactly 384 finite, normalized values:
 
-\`\`\`bash
-python scripts/benchmark_im19_retrieval.py \\
-  --query "tenant scoped knowledge retrieval" \\
-  --vector-json "$(cat query-vector-384.json)" \\
-  --warmup 3 \\
-  --iterations 50
-\`\`\`
+    python scripts/benchmark_im19_retrieval.py --query "tenant scoped knowledge retrieval" --vector-json "$(cat query-vector-384.json)" --warmup 3 --iterations 50
+
+The vector file is an operator-supplied local input. Do not commit private query vectors or source content to Git.
 
 ## Report interpretation
 
