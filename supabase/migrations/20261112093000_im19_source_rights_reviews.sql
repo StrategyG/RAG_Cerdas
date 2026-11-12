@@ -50,20 +50,20 @@ GRANT SELECT,INSERT ON im19.source_rights_reviews TO im19_approver;
 -- New versions must enter through the controlled DISCOVERED state. The base version_gate
 -- is UPDATE-only, so this INSERT guard prevents a worker from inserting PUBLISHED directly.
 CREATE FUNCTION im19.document_version_insert_gate()
-RETURNS trigger LANGUAGE plpgsql SET search_path='' AS $
+RETURNS trigger LANGUAGE plpgsql SET search_path='' AS $$
 BEGIN
   IF NEW.state <> 'DISCOVERED' THEN
     RAISE EXCEPTION 'new document versions must begin at DISCOVERED';
   END IF;
   RETURN NEW;
-END $;
+END $$;
 
 CREATE TRIGGER document_version_insert_gate
 BEFORE INSERT ON im19.document_versions
 FOR EACH ROW EXECUTE FUNCTION im19.document_version_insert_gate();
 
 CREATE FUNCTION im19.source_rights_publication_gate()
-RETURNS trigger LANGUAGE plpgsql SET search_path='' AS $
+RETURNS trigger LANGUAGE plpgsql SET search_path='' AS $$
 DECLARE
   rights im19.source_rights_reviews%ROWTYPE;
 BEGIN
@@ -83,7 +83,7 @@ BEGIN
     END IF;
   END IF;
   RETURN NEW;
-END $;
+END $$;
 
 CREATE TRIGGER source_rights_gate
 BEFORE UPDATE ON im19.document_versions
@@ -92,7 +92,7 @@ FOR EACH ROW EXECUTE FUNCTION im19.source_rights_publication_gate();
 -- A later hold/reject immediately removes an already-published exact version from retrieval.
 -- This quarantines the version but does not erase stored text/embeddings; see the rights runbook.
 CREATE FUNCTION im19.source_rights_revoke_publication()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 BEGIN
   IF NEW.decision <> 'approve' OR NOT NEW.storage_allowed OR NOT NEW.embedding_allowed THEN
     WITH quarantined AS (
@@ -111,7 +111,7 @@ BEGIN
     FROM quarantined;
   END IF;
   RETURN NEW;
-END $;
+END $$;
 
 CREATE TRIGGER source_rights_revoke_published
 AFTER INSERT ON im19.source_rights_reviews
