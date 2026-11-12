@@ -89,6 +89,13 @@ def test_migration_creates_entities_rls_and_publication_gate(database):
         assert conn.execute(
             "SELECT extversion FROM pg_extension WHERE extname='vector'"
         ).fetchone()["extversion"]
+        lexical_index = conn.execute(
+            "SELECT indexdef FROM pg_indexes "
+            "WHERE schemaname='im19' AND indexname='chunks_text_search_gin_idx'"
+        ).fetchone()
+        assert lexical_index is not None
+        assert "using gin" in lexical_index["indexdef"].lower()
+        assert "to_tsvector" in lexical_index["indexdef"].lower()
 
 
 def test_cursor_and_enqueue_are_atomic_and_replay_idempotent(database):

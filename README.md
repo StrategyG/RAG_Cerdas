@@ -4,7 +4,9 @@ Institutional RAG and Autonomous Knowledge Intelligence pilot. **Not production-
 
 The new `im19` package supports incremental read-only Dropbox discovery, versioned PDF/EPUB processing, selective PDF OCR, structured knowledge extraction, five logical local-AI review roles, a private PostgreSQL/pgvector schema, fenced worker jobs and citation-safe hybrid retrieval. Publication remains under separate human approval while quality/risk benchmarks are uncalibrated. The legacy `rag_pipeline.py` path remains available.
 
-Start with the [current audit](docs/IM19_AUDIT_20261025.md), [validation/readiness report](docs/IM19_VALIDATION_REPORT.md), [architecture](docs/IM19_ARCHITECTURE.md), [security report](docs/IM19_SECURITY_REPORT.md) and [operational runbook](docs/IM19_RUNBOOK.md).
+Start with the [production roadmap](docs/RUSA_AI_RAG_CERDAS_PRODUCTION_ROADMAP_v1.1.md), [scalable retrieval note](docs/IM19_SCALE_RETRIEVAL.md), [current audit](docs/IM19_AUDIT_20261025.md), [validation/readiness report](docs/IM19_VALIDATION_REPORT.md), [architecture](docs/IM19_ARCHITECTURE.md), [security report](docs/IM19_SECURITY_REPORT.md) and [operational runbook](docs/IM19_RUNBOOK.md).
+
+The RUSA AI 5M target means 5,000,000 distinct, source-grounded, deduplicated, reviewed, permission-scoped knowledge units — not raw chunks, embeddings, or database rows. The separate 50K initial production corpus and 1B global platform-capacity objectives remain distinct.
 
 ```bash
 python -m pip install -r requirements-test.txt
