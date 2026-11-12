@@ -84,29 +84,18 @@ jobs:
       - name: Run unit tests (required)
         run: python -m pytest -q --strict-config --strict-markers tests
 
-      - name: Validate evaluation case schema
+      - name: Validate evaluation case schema with production evaluator rules
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
+          from eval_retrieval import validate_eval_cases
+
           cases = json.loads(Path("eval_cases.json").read_text(encoding="utf-8"))
-          assert isinstance(cases, list) and cases, "eval_cases.json must be a non-empty list"
-          ids = set()
-          for case in cases:
-              assert isinstance(case, dict)
-              assert case.get("query_id") and isinstance(case.get("query_id"), str)
-              assert case.get("query") and isinstance(case.get("query"), str)
-              assert case["query_id"] not in ids, f"duplicate query_id: {case['query_id']}"
-              ids.add(case["query_id"])
-              status = case.get("label_status")
-              assert isinstance(status, str) and status, "label_status must be explicit"
-              qrels = case.get("relevant_chunk_ids", {})
-              assert isinstance(qrels, (dict, list)), "relevant_chunk_ids must be a dict or list"
-              if status == "reviewed":
-                  if isinstance(qrels, dict):
-                      assert all(isinstance(cid, str) and cid.strip() for cid in qrels), "reviewed qrels need non-empty chunk IDs"
-                      assert all(type(grade) is int and grade >= 0 for grade in qrels.values()), "reviewed qrels grades must be non-negative integers"
-                  else:
-                      assert all(isinstance(cid, (str, int)) and not isinstance(cid, bool) and str(cid).strip() for cid in qrels), "reviewed qrels list needs non-empty chunk IDs"
-          print(f"Validated {len(cases)} evaluation cases; only explicitly reviewed labels can be scored.")
+          validate_eval_cases(cases)
+          reviewed = sum(case["label_status"].strip().lower() == "reviewed" for case in cases)
+          print(
+              f"Validated {len(cases)} evaluation cases using the CLI validator; "
+              f"{reviewed} cases carry reviewed labels."
+          )
           PY

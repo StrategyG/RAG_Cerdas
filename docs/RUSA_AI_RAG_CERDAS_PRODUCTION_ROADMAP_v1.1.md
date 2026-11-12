@@ -71,7 +71,7 @@ Public source availability is not permission to archive full text. Use source-le
 
 | Phase | Priority | Work | Exit evidence |
 |---|---|---|---|
-| R0 — Baseline/governance | P0 | Refresh main/branch/PR state; review existing PR #17 security, #15 evaluation, and RusaAi PR #82 knowledge/version work; reconcile the two stores; propose canonical-store ADR | Exact SHAs, reviewed PR dependency map, explicit ADR decision/hold, owner and acceptance criteria per issue |
+| R0 — Baseline/governance | P0 | Refresh main/branch/PR state; merge PR #17 security and PR #15 evaluation safeguards after exact-head CI; review RusaAi PR #82; reconcile local SQLite/FTS5 and the two PostgreSQL stores; propose canonical-store ADR | PR #17 and #15 merged with exact-head CI evidence; RusaAi PR #82 remains draft; ADR-0001 is Proposed and records the no-selection hold; R1 acceptance criteria remain open |
 | R1 — Contracts/authorization | P0 | Versioned retrieval/ingestion contract; verified principal; tenant/project scope; trace/task IDs; timeout/error envelope; cross-repo contract tests | Positive and negative authorization tests; zero cross-tenant results |
 | R2 — Source integrity | P0 | Reconcile existing 784 raw candidate IDs, 50 alternate collisions, 31 provisional Batch 029 notes, 131 domain-only records, and per-file Dropbox rights; revision/block-hash/SHA256; parser/OCR quotas; tombstone/replay | Reviewed canonical ledger; rights and duplicate dispositions; 100% published source/version/location provenance |
 | R3 — Chunk/embedding/index | P0 | Versioned structure-aware chunker; stable IDs; pinned embedding artifacts; finite/dimension checks; resumable batches; atomic index generations | Reproducible replay; no mixed vector spaces; publication read-back |
@@ -108,9 +108,9 @@ Agree final thresholds with product, QA, Security, and DevOps before release:
 
 ## 7. Current engineering focus
 
-The current implementation branch moves lexical candidate retrieval from a Python full-corpus scan to PostgreSQL GIN-indexed full-text search, combines bounded lexical and pgvector candidates with RRF, and performs query embedding before opening a database transaction.
+Current main implements PostgreSQL GIN-indexed lexical candidate retrieval instead of the Python full-corpus scan, combines bounded lexical and pgvector candidates with RRF, and performs query embedding before opening a database transaction. The legacy public-search Edge Function now fails closed by default, and the retrieval evaluator requires a structurally consistent human-review evidence envelope before scoring.
 
-This change improves the retrieval architecture but does not certify 5-million-unit capacity, provide tenant isolation, or select the canonical RUSA AI knowledge store. Representative load tests, a tenant-aware data model if IM19 is selected, target staging, human-reviewed qrels, and an approved cross-repository contract remain mandatory.
+These changes improve retrieval efficiency and governance but do not certify 5-million-unit capacity, provide tenant isolation for IM19, authenticate reviewers against a production identity registry, or select the canonical RUSA AI knowledge store. Representative load tests, a tenant-aware data model if IM19 is selected, target staging, genuinely human-reviewed qrels, and an approved cross-repository contract remain mandatory.
 
 ## 8. GitHub delivery rules
 
