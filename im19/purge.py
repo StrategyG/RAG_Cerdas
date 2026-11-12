@@ -15,7 +15,9 @@ _TEMP_PATTERN = re.compile(
 )
 
 
-def purge_local_artifacts(workdir: str | Path, document_version_id: str) -> dict:
+def purge_local_artifacts(
+    workdir: str | Path, document_version_id: str, storage_node_id: str
+) -> dict:
     """Remove only the UUID-named blob and lease temp files for one document version.
 
     Symlinks are unlinked as directory entries; their targets are never followed.
@@ -27,14 +29,18 @@ def purge_local_artifacts(workdir: str | Path, document_version_id: str) -> dict
     except (TypeError, ValueError, OSError) as exc:
         raise PipelineError("FAILED", "LOCAL_PURGE_INPUT_INVALID") from exc
 
-    if not root.exists():
-        return {
-            "blob_files_removed": 0,
-            "temp_files_removed": 0,
-            "files_verified_absent": True,
-        }
-    if not root.is_dir():
-        raise PipelineError("FAILED", "LOCAL_PURGE_ROOT_NOT_DIRECTORY")
+    if not root.exists() or not root.is_dir():
+        raise PipelineError("FAILED", "LOCAL_PURGE_ROOT_MISSING_OR_NOT_DIRECTORY")
+
+    marker = root / ".im19-storage-node-id"
+    if marker.is_symlink() or not marker.is_file():
+        raise PipelineError("FAILED", "LOCAL_PURGE_STORAGE_MARKER_MISSING")
+    try:
+        registered_node = marker.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise PipelineError("FAILED", "LOCAL_PURGE_STORAGE_MARKER_UNREADABLE") from exc
+    if not storage_node_id or registered_node != storage_node_id:
+        raise PipelineError("AUTH_BLOCKED", "LOCAL_PURGE_STORAGE_NODE_MISMATCH")
 
     blob_path = root / f"{version_id}.blob"
     temp_paths = [
