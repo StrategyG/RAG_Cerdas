@@ -629,7 +629,7 @@ BEFORE INSERT OR UPDATE ON im19.ingestion_jobs
 FOR EACH ROW EXECUTE FUNCTION im19_security.purge_job_write_gate();
 
 CREATE FUNCTION im19_security.purge_version_state_gate()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $version$
 BEGIN
   IF EXISTS (SELECT 1 FROM im19_security.purge_requests p WHERE p.document_version_id=OLD.id) THEN
     IF EXISTS (
@@ -649,7 +649,7 @@ BEGIN
     END IF;
   END IF;
   RETURN NEW;
-END $;
+END $version$;
 CREATE TRIGGER purge_version_state_gate BEFORE UPDATE ON im19.document_versions
 FOR EACH ROW EXECUTE FUNCTION im19_security.purge_version_state_gate();
 
