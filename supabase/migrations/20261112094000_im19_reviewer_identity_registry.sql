@@ -58,7 +58,7 @@ BEGIN
   END IF;
 
   IF NOT pg_catalog.pg_has_role(
-    NEW.database_login_role::text, 'im19_approver', 'MEMBER'
+    NEW.database_login_role, 'im19_approver', 'MEMBER'
   ) THEN
     RAISE EXCEPTION 'reviewer LOGIN must inherit im19_approver';
   END IF;
