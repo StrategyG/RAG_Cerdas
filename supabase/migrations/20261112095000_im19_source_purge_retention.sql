@@ -296,6 +296,19 @@ BEGIN
   END IF;
 END $$;
 
+CREATE FUNCTION im19.is_registered_storage_node()
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=''
+AS $
+DECLARE node record;
+BEGIN
+  SELECT * INTO node FROM im19_security.current_storage_node();
+  RETURN true;
+END
+$;
+
 CREATE FUNCTION im19_security.purge_inventory(p_document_version_id uuid)
 RETURNS jsonb LANGUAGE sql SECURITY DEFINER SET search_path='' AS $$
   SELECT pg_catalog.jsonb_build_object(
@@ -831,5 +844,6 @@ GRANT EXECUTE ON FUNCTION im19.approve_source_purge(uuid,text) TO im19_approver;
 GRANT EXECUTE ON FUNCTION im19.execute_approved_source_purge(uuid) TO im19_worker;
 GRANT EXECUTE ON FUNCTION im19.claim_local_purge_targets() TO im19_worker;
 GRANT EXECUTE ON FUNCTION im19.record_local_purge_receipt(uuid,uuid,integer,integer,boolean) TO im19_worker;
+GRANT EXECUTE ON FUNCTION im19.is_registered_storage_node() TO im19_worker;
 
 COMMIT;
