@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 import psycopg
 from psycopg import sql
+from psycopg.rows import dict_row
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from im19.contracts import PipelineError, digest, Page, Chunk
 from im19.knowledge_mining.dropbox_discovery import normalize_entry, content_hash
@@ -17,7 +18,7 @@ def _test_reviewer_role_name(reviewer_id):
 
 def _ensure_test_reviewer(store, reviewer_id, *, register=True):
     role_name = _test_reviewer_role_name(reviewer_id)
-    with psycopg.connect(store.dsn) as admin:
+    with psycopg.connect(store.dsn, row_factory=dict_row) as admin:
         exists = admin.execute(
             "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname=%s", (role_name,)
         ).fetchone()
@@ -59,7 +60,7 @@ def reviewer_tx(store, reviewer_id, *, register=True):
     role_name = _ensure_test_reviewer(store, reviewer_id, register=register)
     config = conninfo_to_dict(store.dsn)
     config["user"] = role_name
-    with psycopg.connect(make_conninfo(**config)) as conn:
+    with psycopg.connect(make_conninfo(**config), row_factory=dict_row) as conn:
         yield conn
 
 
