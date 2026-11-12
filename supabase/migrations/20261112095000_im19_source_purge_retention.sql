@@ -280,6 +280,12 @@ BEGIN
     AND NOT r.rolcreaterole AND NOT r.rolcreatedb AND NOT r.rolreplication
     AND pg_catalog.pg_has_role(session_user,'im19_worker','MEMBER')
     AND NOT pg_catalog.pg_has_role(session_user,'im19_approver','MEMBER')
+    AND EXISTS (
+      SELECT 1 FROM pg_catalog.pg_auth_members membership
+      WHERE membership.member=principal_oid
+        AND membership.roleid=pg_catalog.to_regrole('im19_worker')::oid
+        AND NOT membership.admin_option
+    )
     AND NOT EXISTS (
       SELECT 1 FROM im19_security.worker_storage_node_revocations x
       WHERE x.database_role_oid=n.database_role_oid
