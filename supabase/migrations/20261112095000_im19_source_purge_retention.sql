@@ -250,9 +250,9 @@ RETURNS jsonb LANGUAGE sql SECURITY DEFINER SET search_path='' AS $$
     'embeddings',(SELECT count(*) FROM im19.embeddings e JOIN im19.chunks c ON c.id=e.chunk_id WHERE c.document_id=p_document_version_id),
     'knowledge_units',(SELECT count(*) FROM im19.knowledge_units WHERE document_id=p_document_version_id),
     'knowledge_claims',(SELECT count(*) FROM im19.knowledge_claims k JOIN im19.knowledge_units u ON u.id=k.id WHERE u.document_id=p_document_version_id),
-    'claim_evidence',(SELECT count(*) FROM im19.claim_evidence e JOIN im19.knowledge_units u ON u.id=e.claim_id WHERE u.document_id=p_document_version_id),
+    'claim_evidence',(SELECT count(*) FROM im19.claim_evidence e WHERE e.claim_id IN (SELECT id FROM im19.knowledge_units WHERE document_id=p_document_version_id) OR e.chunk_id IN (SELECT id FROM im19.chunks WHERE document_id=p_document_version_id)),
     'review_runs',(SELECT count(*) FROM im19.review_runs WHERE document_id=p_document_version_id),
-    'review_findings',(SELECT count(*) FROM im19.review_findings f JOIN im19.review_runs r ON r.id=f.review_run_id WHERE r.document_id=p_document_version_id),
+    'review_findings',(SELECT count(*) FROM im19.review_findings f WHERE f.review_run_id IN (SELECT id FROM im19.review_runs WHERE document_id=p_document_version_id) OR f.knowledge_id IN (SELECT id FROM im19.knowledge_units WHERE document_id=p_document_version_id)),
     'human_approvals',(SELECT count(*) FROM im19.human_approvals a JOIN im19.review_runs r ON r.id=a.review_run_id WHERE r.document_id=p_document_version_id),
     'knowledge_nodes',(SELECT count(*) FROM im19.knowledge_nodes WHERE document_id=p_document_version_id),
     'knowledge_relations',(
@@ -261,8 +261,8 @@ RETURNS jsonb LANGUAGE sql SECURITY DEFINER SET search_path='' AS $$
          OR r.target_id IN (SELECT id FROM im19.knowledge_nodes WHERE document_id=p_document_version_id)
          OR r.evidence_id IN (
            SELECT e.id FROM im19.claim_evidence e
-           JOIN im19.knowledge_units u ON u.id=e.claim_id
-           WHERE u.document_id=p_document_version_id
+           WHERE e.claim_id IN (SELECT id FROM im19.knowledge_units WHERE document_id=p_document_version_id)
+              OR e.chunk_id IN (SELECT id FROM im19.chunks WHERE document_id=p_document_version_id)
          )
     ),
     'ingestion_jobs',(SELECT count(*) FROM im19.ingestion_jobs WHERE document_id=p_document_version_id)
@@ -600,15 +600,18 @@ BEGIN
   WHERE r.source_id IN (SELECT id FROM im19.knowledge_nodes WHERE document_id=purge_row.document_version_id)
      OR r.target_id IN (SELECT id FROM im19.knowledge_nodes WHERE document_id=purge_row.document_version_id)
      OR r.evidence_id IN (
-       SELECT e.id FROM im19.claim_evidence e JOIN im19.knowledge_units u ON u.id=e.claim_id
-       WHERE u.document_id=purge_row.document_version_id
+       SELECT e.id FROM im19.claim_evidence e
+       WHERE e.claim_id IN (SELECT id FROM im19.knowledge_units WHERE document_id=purge_row.document_version_id)
+          OR e.chunk_id IN (SELECT id FROM im19.chunks WHERE document_id=purge_row.document_version_id)
      );
   DELETE FROM im19.embeddings e USING im19.chunks c
   WHERE e.chunk_id=c.id AND c.document_id=purge_row.document_version_id;
-  DELETE FROM im19.claim_evidence e USING im19.knowledge_units u
-  WHERE e.claim_id=u.id AND u.document_id=purge_row.document_version_id;
-  DELETE FROM im19.review_findings f USING im19.review_runs r
-  WHERE f.review_run_id=r.id AND r.document_id=purge_row.document_version_id;
+  DELETE FROM im19.claim_evidence e
+  WHERE e.claim_id IN (SELECT id FROM im19.knowledge_units WHERE document_id=purge_row.document_version_id)
+     OR e.chunk_id IN (SELECT id FROM im19.chunks WHERE document_id=purge_row.document_version_id);
+  DELETE FROM im19.review_findings f
+  WHERE f.review_run_id IN (SELECT id FROM im19.review_runs WHERE document_id=purge_row.document_version_id)
+     OR f.knowledge_id IN (SELECT id FROM im19.knowledge_units WHERE document_id=purge_row.document_version_id);
   DELETE FROM im19.human_approvals a USING im19.review_runs r
   WHERE a.review_run_id=r.id AND r.document_id=purge_row.document_version_id;
   DELETE FROM im19.review_runs WHERE document_id=purge_row.document_version_id;
