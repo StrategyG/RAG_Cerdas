@@ -578,6 +578,26 @@ FOR EACH ROW EXECUTE FUNCTION im19_security.purge_content_write_gate();
 CREATE TRIGGER embeddings_purge_write_gate BEFORE INSERT OR UPDATE ON im19.embeddings
 FOR EACH ROW EXECUTE FUNCTION im19_security.purge_content_write_gate();
 
+CREATE FUNCTION im19_security.purge_job_write_gate()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $
+DECLARE v_state text;
+BEGIN
+  SELECT v.state INTO v_state FROM im19.document_versions v
+  WHERE v.id=NEW.document_id;
+  IF v_state IS NULL OR v_state IN ('QUARANTINED','SUPERSEDED')
+     OR EXISTS (
+       SELECT 1 FROM im19_security.purge_requests p
+       WHERE p.document_version_id=NEW.document_id
+     ) THEN
+    RAISE EXCEPTION 'cannot queue work for quarantined or purge-requested document version';
+  END IF;
+  RETURN NEW;
+END $;
+
+CREATE TRIGGER ingestion_jobs_purge_write_gate
+BEFORE INSERT OR UPDATE ON im19.ingestion_jobs
+FOR EACH ROW EXECUTE FUNCTION im19_security.purge_job_write_gate();
+
 CREATE FUNCTION im19_security.purge_version_state_gate()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 BEGIN
