@@ -45,6 +45,7 @@ def main():
             failed = 0
             blob_removed = 0
             temp_removed = 0
+            workflow_completed = 0
             for target in targets:
                 try:
                     receipt = purge_local_artifacts(
@@ -58,15 +59,18 @@ def main():
                         receipt["blob_files_removed"],
                         receipt["temp_files_removed"],
                     )
+                    if status == "completed":
+                        workflow_completed += 1
                     completed += 1
                     blob_removed += receipt["blob_files_removed"]
                     temp_removed += receipt["temp_files_removed"]
                 except PipelineError:
                     failed += 1
             print(json.dumps({
-                "status": "completed" if failed == 0 else "partial",
+                "status": "processed" if failed == 0 else "partial",
                 "targets_processed": completed + failed,
                 "receipts_recorded": completed,
+                "purge_requests_completed": workflow_completed,
                 "failed": failed,
                 "blob_files_removed": blob_removed,
                 "temp_files_removed": temp_removed,
