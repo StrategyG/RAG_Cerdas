@@ -695,3 +695,69 @@ def test_reviewer_registration_rejects_login_that_also_inherits_worker(database)
                 (role_name, role_name, reviewer_id, reviewer_id),
             )
 
+def test_reviewer_registration_rejects_any_additional_group_membership(database):
+    reviewer_id = "fixture-extra-registration-" + uuid4().hex
+    role_name = _ensure_test_reviewer(database, reviewer_id, register=False)
+    extra_role = "im19_test_extra_" + uuid4().hex[:16]
+    with psycopg.connect(database.dsn) as admin:
+        admin.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(extra_role)))
+        admin.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(extra_role), sql.Identifier(role_name)
+            )
+        )
+
+    try:
+        with pytest.raises(
+            psycopg.errors.RaiseException,
+            match="reviewer LOGIN must inherit only im19_approver",
+        ):
+            with database.tx() as conn:
+                conn.execute(
+                    "INSERT INTO im19_security.reviewer_identities("
+                    "database_role_oid,database_login_role,reviewer_id,display_name) "
+                    "SELECT pg_catalog.to_regrole(%s)::oid,%s,%s,%s",
+                    (role_name, role_name, reviewer_id, reviewer_id),
+                )
+    finally:
+        with psycopg.connect(database.dsn) as admin:
+            admin.execute(
+                sql.SQL("REVOKE {} FROM {}").format(
+                    sql.Identifier(extra_role), sql.Identifier(role_name)
+                )
+            )
+            admin.execute(
+                sql.SQL("REVOKE im19_approver FROM {}").format(sql.Identifier(role_name))
+            )
+            admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role_name)))
+            admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(extra_role)))
+
+
+def test_reviewer_decisions_reject_group_memberships_granted_after_registration(database):
+    doc, _ = discover(database)
+    reviewer_id = "fixture-extra-decision-" + uuid4().hex
+    role_name = _ensure_test_reviewer(database, reviewer_id)
+    extra_role = "im19_test_extra_" + uuid4().hex[:16]
+    with psycopg.connect(database.dsn) as admin:
+        admin.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(extra_role)))
+        admin.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(extra_role), sql.Identifier(role_name)
+            )
+        )
+
+    try:
+        with reviewer_tx(database, reviewer_id, register=False) as conn:
+            with pytest.raises(
+                psycopg.errors.InsufficientPrivilege,
+                match="reviewer LOGIN must inherit only im19_approver",
+            ):
+                _insert_test_rights_decision(conn, doc, reviewer_id)
+    finally:
+        with psycopg.connect(database.dsn) as admin:
+            admin.execute(
+                sql.SQL("REVOKE {} FROM {}").format(
+                    sql.Identifier(extra_role), sql.Identifier(role_name)
+                )
+            )
+            admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(extra_role)))
