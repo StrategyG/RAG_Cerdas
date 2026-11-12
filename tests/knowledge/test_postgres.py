@@ -674,3 +674,23 @@ def test_reviewer_identity_and_revocation_records_are_append_only(database):
                 (identity["database_role_oid"],),
             )
 
+
+def test_reviewer_registration_rejects_login_that_also_inherits_worker(database):
+    reviewer_id = "fixture-worker-reviewer"
+    role_name = _ensure_test_reviewer(database, reviewer_id, register=False)
+    with database.tx() as conn:
+        conn.execute(
+            sql.SQL("GRANT im19_worker TO {}").format(sql.Identifier(role_name))
+        )
+    with pytest.raises(
+        psycopg.errors.RaiseException,
+        match="reviewer LOGIN must not inherit im19_worker",
+    ):
+        with database.tx() as conn:
+            conn.execute(
+                "INSERT INTO im19_security.reviewer_identities("
+                "database_role_oid,database_login_role,reviewer_id,display_name) "
+                "SELECT pg_catalog.to_regrole(%s)::oid,%s,%s,%s",
+                (role_name, role_name, reviewer_id, reviewer_id),
+            )
+
