@@ -526,6 +526,9 @@ DECLARE
   v_related_document_id uuid;
   v_document_state text;
 BEGIN
+  IF TG_OP='UPDATE' THEN
+    RAISE EXCEPTION 'derived content records are append-only';
+  END IF;
   IF TG_TABLE_NAME IN ('document_pages','chunks','extraction_runs','knowledge_units','review_runs','knowledge_nodes') THEN
     v_document_version_id := NEW.document_id;
   ELSIF TG_TABLE_NAME='knowledge_claims' THEN
@@ -628,13 +631,25 @@ FOR EACH ROW EXECUTE FUNCTION im19_security.purge_job_write_gate();
 CREATE FUNCTION im19_security.purge_version_state_gate()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM im19_security.purge_requests p WHERE p.document_version_id=OLD.id)
-     AND NEW.state IS DISTINCT FROM OLD.state
-     AND NEW.state IS DISTINCT FROM 'QUARANTINED' THEN
-    RAISE EXCEPTION 'document version is locked by an immutable purge request';
+  IF EXISTS (SELECT 1 FROM im19_security.purge_requests p WHERE p.document_version_id=OLD.id) THEN
+    IF EXISTS (
+      SELECT 1 FROM im19_security.purge_execution_authorizations a
+      WHERE a.transaction_id=pg_catalog.txid_current()
+        AND a.document_version_id=OLD.id
+    ) THEN
+      IF NEW.state IS DISTINCT FROM OLD.state THEN
+        RAISE EXCEPTION 'purge execution cannot change the document version state';
+      END IF;
+    ELSIF OLD.state IS DISTINCT FROM 'QUARANTINED'
+       AND NEW.state IS NOT DISTINCT FROM 'QUARANTINED' THEN
+      -- The request function may perform the one-way quarantine transition.
+      NULL;
+    ELSE
+      RAISE EXCEPTION 'document version is locked by an immutable purge request';
+    END IF;
   END IF;
   RETURN NEW;
-END $$;
+END $;
 CREATE TRIGGER purge_version_state_gate BEFORE UPDATE ON im19.document_versions
 FOR EACH ROW EXECUTE FUNCTION im19_security.purge_version_state_gate();
 
