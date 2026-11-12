@@ -653,18 +653,21 @@ def test_reviewer_identity_and_revocation_records_are_append_only(database):
             "WHERE reviewer_id=%s",
             (reviewer_id,),
         ).fetchone()
-        with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
+    with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
+        with database.tx() as conn:
             conn.execute(
                 "UPDATE im19_security.reviewer_identities SET display_name='Changed' "
                 "WHERE database_role_oid=%s",
                 (identity["database_role_oid"],),
             )
+    with database.tx() as conn:
         conn.execute(
             "INSERT INTO im19_security.reviewer_identity_revocations("
             "database_role_oid,reviewer_id,reason) VALUES(%s,%s,'Immutable test')",
             (identity["database_role_oid"], reviewer_id),
         )
-        with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
+    with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
+        with database.tx() as conn:
             conn.execute(
                 "UPDATE im19_security.reviewer_identity_revocations SET reason='Changed' "
                 "WHERE database_role_oid=%s",
