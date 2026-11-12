@@ -1,0 +1,7 @@
+-r requirements-test.txt
+psycopg[binary]>=3.2,<4
+defusedxml>=0.7.1,<1
+pytesseract>=0.3.13,<1
+Pillow>=10.4,<13
+# Isolated, disposable PostgreSQL+pgvector server; never connects to production.
+pgserver==0.1.4

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Validate required secrets and test read-only Supabase/Dropbox connectivity without printing secrets."""
+"""Validate required secrets and test read-only Supabase/Dropbox connectivity.
+
+This is a safe pilot gate, not a production readiness declaration. The goal is to
+confirm that the environment is structurally valid and can reach required external
+services without printing or exposing secrets before any live ingestion, migration,
+or deployment is attempted.
+"""
 from __future__ import annotations
 
 import json
@@ -47,33 +53,33 @@ def check_supabase() -> tuple[bool, str]:
         return False, f"{type(exc).__name__}; check URL, secret, network and RPC exposure"
 
 
-def check_dropbox() -> tuple[bool, str]:
-    token = os.getenv("DROPBOX_ACCESS_TOKEN", "").strip()
-    if not token:
-        return True, "not configured (optional; local PDF files must be supplied)"
-    path = os.getenv("DROPBOX_PREFLIGHT_PATH", DROPBOX_PILOT_PATH).strip()
+def dropbox_configured() -> bool:
+    return configured("DROPBOX_ACCESS_TOKEN") or configured("DROPBOX_REFRESH_TOKEN")
+
+
+def check_dropbox() -> tuple[bool,str]:
+    from im19.knowledge_mining.dropbox_discovery import DropboxClient
+    from im19.secrets import LegacyEnvironmentSecrets
+    from im19.contracts import PipelineError
+    if not dropbox_configured():
+        return True,"not configured (optional for local PDF pilot)"
     try:
-        response = requests.post(
-            "https://content.dropboxapi.com/2/files/download",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Dropbox-API-Arg": json.dumps({"path": path}, separators=(",", ":")),
-            },
-            timeout=45,
-        )
-        if not response.ok:
-            return False, f"HTTP {response.status_code} when downloading the preflight PDF; check token scopes and DROPBOX_PREFLIGHT_PATH"
-        if not response.content.startswith(b"%PDF-"):
-            return False, "Dropbox returned data without a PDF signature"
-        return True, f"read-only PDF download verified ({len(response.content)} bytes)"
+        client=DropboxClient(LegacyEnvironmentSecrets(),legacy_token=os.getenv("DROPBOX_ACCESS_TOKEN", ""))
+        metadata=client.metadata(os.getenv("DROPBOX_PREFLIGHT_PATH",DROPBOX_PILOT_PATH))
+        if metadata.get(".tag") != "file":
+            return False,"Selected Dropbox source is not a file"
+        return True,"read-only metadata verified; no PDF downloaded"
+    except PipelineError as exc:
+        return False,f"{exc.status}: {exc.code}"
     except Exception as exc:
-        return False, f"{type(exc).__name__}; check Dropbox access and network"
+        return False,type(exc).__name__
 
 
 def main() -> int:
     required = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY")
     missing = [name for name in required if not configured(name)]
-    print("Institutional RAG preflight (no database writes)")
+    print("Institutional RAG pilot gate (read-only; safe pilot only)")
+    print("This is not a production readiness declaration.")
     for name in required:
         print(f"{name}: {'set' if configured(name) else 'missing or placeholder'}")
     print(f"DROPBOX_ACCESS_TOKEN: {'set' if configured('DROPBOX_ACCESS_TOKEN') else 'not set (optional)'}")
@@ -82,7 +88,8 @@ def main() -> int:
     print(f"PDF directory: {pdf_dir} ({len(local_pdfs)} PDF file(s))")
 
     if missing:
-        print("STATUS: BLOCKED — add real values as Codespaces Secrets, then restart the Codespace.")
+        print("STATUS: BLOCKED — add real values as Codespaces Secrets or a local .env file, then restart the environment.")
+        print("NEXT: do not attempt ingestion, migration, or deployment until the required secrets are valid and reviewed.")
         return 2
 
     supabase_ok, supabase_detail = check_supabase()
@@ -92,18 +99,23 @@ def main() -> int:
         return 3
 
     dropbox_ok, dropbox_detail = check_dropbox()
-    if configured("DROPBOX_ACCESS_TOKEN"):
+    if dropbox_configured():
         print(f"Dropbox connectivity: {'OK' if dropbox_ok else 'FAILED'} — {dropbox_detail}")
     else:
         print(f"Dropbox connectivity: {dropbox_detail}")
-    if not dropbox_ok:
-        print("STATUS: BLOCKED — correct Dropbox token scope/path before ingestion.")
+    if not dropbox_ok and not local_pdfs:
+        print("STATUS: BLOCKED — correct Dropbox token scope and path before any live PDF pilot.")
         return 4
-    if not local_pdfs and not configured("DROPBOX_ACCESS_TOKEN"):
-        print("STATUS: DATABASE OK, BUT NO SOURCE PDFs FOUND.")
+
+    if not local_pdfs and not dropbox_configured():
+        print("STATUS: BLOCKED — database reachable, but no source PDFs are configured. Add a local PDF or Dropbox access before a pilot.")
         return 1
 
-    print("STATUS: CONNECTIVITY CHECKS PASSED. Ingestion has not been run.")
+    if not dropbox_ok and local_pdfs:
+        print("Dropbox connector: AUTH_BLOCKED/FAILED; local PDF pilot remains available")
+    print("STATUS: SAFE PILOT READY")
+    print("Human approval is still required before any live ingestion, migration, bulk indexing, or production deployment.")
+    print("Production readiness is not declared by this check alone; it requires retrieval evaluation, citation validation, and operational review.")
     return 0
 
 

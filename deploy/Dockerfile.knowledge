@@ -1,0 +1,11 @@
+FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake tesseract-ocr tesseract-ocr-eng tesseract-ocr-ind && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements*.txt /app/
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && pip install --no-cache-dir -r requirements-knowledge.txt
+COPY im19 /app/im19
+RUN useradd --uid 10001 --create-home im19 && mkdir -p /data/im19 && chown -R im19:im19 /data
+USER 10001:10001
+HEALTHCHECK --interval=60s --timeout=15s --start-period=120s CMD python -m im19.cli health
+ENTRYPOINT ["python","-m","im19.cli"]
