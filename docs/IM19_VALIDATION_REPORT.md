@@ -94,8 +94,38 @@ The production lexical score is PostgreSQL `ts_rank_cd` over the `simple` text-s
 This CI run proves the stated disposable-database and regression checks only. It does not prove that the GIN index is selected by the planner for every production filter, nor does it provide representative `EXPLAIN (ANALYZE, BUFFERS)`, 100K/500K/1M/5M capacity results, target Supabase/Dropbox/model verification, tenant-aware public authorization, or 24/7 deployment evidence. Production release remains **BLOCKED** until all six gates pass.
 
 
-## 12 November 2026 — source rights review gate submitted
+### Graph-expansion SQL correction
 
-A separate review branch adds an append-only source-rights ledger tied to the exact source file, Dropbox revision, and content hash. The worker requires both operational processing authorization and a human rights decision allowing source storage and embedding. The latest decision controls; a new source revision/hash is not covered by an earlier approval.
+A source-schema review found that knowledge_relations.source_id and target_id reference knowledge_nodes, not knowledge_units. The previous graph-expansion query joined relation endpoints directly to knowledge_units, which was incompatible with the declared foreign keys. The query now joins both endpoints through knowledge_nodes and expands only target nodes of type Claim through their matching knowledge_units/source_chunk_ids. A regression test asserts the declared schema path. This is a code/schema compatibility correction; the new CI run is the required validation for this commit.
 
-The worker can read rights decisions but cannot insert, update, or delete them. A database publication trigger independently checks the latest approved rights decision. GitHub Actions run [43144210739](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43144210739) passed **201 tests in 4.65s** on head `cb9ea1856f5407ccb68d065de0576987d029e589`, including the disposable PostgreSQL/pgvector migration, role grants, revision-bound review behavior, append-only enforcement, and pre-download gate. Target staging validation, live Dropbox/provider verification, and legal review of actual source permissions remain required. This does not authorize bulk ingestion, full-text archival where rights are unclear, or a notes-only derivative workflow.
+
+### Exact-head regression validation — 12 November 2026
+
+- Commit: \`615713b953a705bac3ab42f4bb1950c69125bb5e\`.
+- [Institutional RAG checks](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43154410922) completed successfully.
+- Unit tests: **200 passed in 6.00 seconds**.
+- The run includes the graph-expansion regression asserting that relation endpoints join through im19.knowledge_nodes and target Claim nodes resolve through im19.knowledge_units.
+- No production database migration, live ingestion, source mutation, cutover, or deployment was performed.
+
+
+### Read-only scale benchmark harness added
+
+A manual benchmark command is now available in scripts/benchmark_im19_retrieval.py, with implementation in im19/benchmark.py and offline unit tests in tests/knowledge/test_benchmark.py.
+
+The harness requires a restricted im19_worker identity, enforces read-only transactions, requires TLS verify-full except for explicitly allowed loopback tests, reports PostgreSQL planner row estimates rather than full COUNT(*) scans, and captures EXPLAIN (ANALYZE, BUFFERS) plus p50/p95 query latency for the lexical and dense candidate paths.
+
+**Not run against staging yet.** No scale, latency, index-selection, relevance, tenant-isolation, or production-capacity result is claimed. The synthetic unit vector is for access-path inspection only, not retrieval quality.
+
+
+### Exact-head benchmark harness CI validation — 12 November 2026
+
+- Code commit: \`a95363c4d2402a6394da5d9f84e0d12688e048f5\`.
+- [Institutional RAG checks](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43155733737) passed **203 tests in 4.79 seconds**.
+- Offline unit tests cover percentile calculation, EXPLAIN plan parsing, and the lexical/vector SQL templates.
+- The benchmark command has **not** been run against a staging database. No measured index-selection, p50/p95, scale, or capacity result is claimed.
+
+## Source-rights gate — 12 November 2026
+
+The source-rights review branch adds an append-only decision ledger bound to the exact document-version source revision and content hash. The worker rechecks rights before download and each processing stage; persistence methods recheck inside their database transactions. The database blocks direct INSERT of PUBLISHED versions, checks the exact revision/hash on publication, and quarantines a previously published version from retrieval when a later hold/reject is recorded.
+
+Quarantine is not deletion: stored text, chunks, knowledge units, embeddings, and downloaded blobs may remain. Reviewer identity is not authenticated by the current migration; reviewer_id is operator-supplied. A verified reviewer registry and audited purge/retention workflow remain production blockers. No live migration, source ingestion, or deployment is claimed by this code change.

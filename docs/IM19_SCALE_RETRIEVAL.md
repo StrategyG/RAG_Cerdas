@@ -1,6 +1,6 @@
 # IM19 scalable retrieval implementation note
 
-**Status:** Implemented on a review branch; CI passed (199 tests, 5.35s); representative capacity and target-staging tests pending.
+**Status:** Implemented on a review branch; exact code commit a95363c passed CI (203 tests, 4.79s); the read-only benchmark harness is not yet run against staging.
 
 ## Change
 
@@ -20,7 +20,7 @@ The lexical score is PostgreSQL ts_rank_cd; it is not BM25. The pure-Python bm25
 
 ## Scale boundary
 
-This removes the full-corpus Python scan, but it does not certify 5-million-unit capacity. The GIN/HNSW indexes, tenant/project filtering, query plans, update rate, memory, disk, and p95 latency still require representative staging benchmarks. The current retriever is a private worker interface; it must not be exposed as a multi-tenant public API until caller identity is verified and tenant scope is enforced inside the database boundary.
+This removes the full-corpus Python scan, but it does not certify 5-million-unit capacity. The GIN/HNSW indexes, query plans, update rate, memory, disk, and p95 latency still require representative staging benchmarks. The current IM19 schema has no tenant_id columns or per-tenant RLS predicates; its broad worker policy is private-role scoped, not tenant isolation. The retriever is a private worker interface and must not be exposed as a multi-tenant public API. The canonical RUSA AI knowledge store is also unresolved: RusaAi main contains a separate optional tenant-scoped PostgreSQL/pgvector store. See [ADR-0001](ADR_0001_CANONICAL_KNOWLEDGE_STORE.md); do not dual-write or cross-read until a decision and contract are approved.
 
 The IM19 schema is private and migrations are never applied by worker startup. The new migration is additive. Apply it only to an approved, backup-restored staging database after reviewing the target schema. For a populated production-sized index, assess index build locking and use the platform's approved online-index procedure rather than blindly applying DDL during service hours.
 
@@ -36,6 +36,10 @@ Keep these milestones separate:
 
 Report raw candidates, unique candidates, reviewed units, approved units, embedded units, indexed units, and production-published units separately. The current Dropbox snapshot in the expansion plan is a raw candidate ledger, not an approved or indexed corpus.
 
+## Relationship to RusaAi local memory
+
+RusaAi Architecture v2.0 and CPU Deployment v1.0 specify SQLite for device-local metadata/state and SQLite FTS5 for local full-text search, with vector search optional after benchmarking. This IM19 PostgreSQL benchmark measures a separate candidate retrieval path; it does not replace the local baseline or establish a replication contract between local memory and the shared corpus. The canonical shared Agent/Worker corpus store remains unresolved under [ADR-0001](ADR_0001_CANONICAL_KNOWLEDGE_STORE.md).
+
 ## RUSA CPU-first alignment
 
 - Start prose chunking at the RusaAi architecture baseline of 400–600 tokens.
@@ -44,6 +48,8 @@ Report raw candidates, unique candidates, reviewed units, approved units, embedd
 - Respect the 8K context budget and dynamic Context Manager allocation.
 - Keep ingestion, embedding, and indexing bounded and asynchronous so background work does not starve the shared CPU inference runtime.
 - Do not load the full corpus or all embeddings into worker RAM.
+
+The read-only benchmark harness is available at [IM19_BENCHMARK_GUIDE.md](IM19_BENCHMARK_GUIDE.md). It reports planner estimates, GIN/HNSW plan selection, buffer use, and p50/p95 database latency without changing data. It has not yet been run against a representative staging corpus.
 
 ## Validation still required
 

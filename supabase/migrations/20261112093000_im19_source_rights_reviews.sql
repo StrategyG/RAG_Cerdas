@@ -47,19 +47,32 @@ GRANT SELECT ON im19.source_rights_reviews TO im19_worker;
 REVOKE INSERT,UPDATE,DELETE ON im19.source_rights_reviews FROM im19_worker;
 GRANT SELECT,INSERT ON im19.source_rights_reviews TO im19_approver;
 
+-- New versions must enter through the controlled DISCOVERED state. The base version_gate
+-- is UPDATE-only, so this INSERT guard prevents a worker from inserting PUBLISHED directly.
+CREATE FUNCTION im19.document_version_insert_gate()
+RETURNS trigger LANGUAGE plpgsql SET search_path='' AS $
+BEGIN
+  IF NEW.state <> 'DISCOVERED' THEN
+    RAISE EXCEPTION 'new document versions must begin at DISCOVERED';
+  END IF;
+  RETURN NEW;
+END $;
+
+CREATE TRIGGER document_version_insert_gate
+BEFORE INSERT ON im19.document_versions
+FOR EACH ROW EXECUTE FUNCTION im19.document_version_insert_gate();
+
 CREATE FUNCTION im19.source_rights_publication_gate()
-RETURNS trigger LANGUAGE plpgsql SET search_path='' AS $$
+RETURNS trigger LANGUAGE plpgsql SET search_path='' AS $
 DECLARE
-  source im19.source_files%ROWTYPE;
   rights im19.source_rights_reviews%ROWTYPE;
 BEGIN
   IF NEW.state='PUBLISHED' AND OLD.state<>'PUBLISHED' THEN
-    SELECT * INTO source FROM im19.source_files WHERE id=NEW.source_file_id FOR SHARE;
     SELECT * INTO rights
     FROM im19.source_rights_reviews
-    WHERE source_file_id=source.id
-      AND revision=source.revision
-      AND content_hash=source.content_hash
+    WHERE source_file_id=NEW.source_file_id
+      AND revision=NEW.revision
+      AND content_hash=NEW.source_content_hash
     ORDER BY created_at DESC,id DESC
     LIMIT 1;
     IF rights.id IS NULL
@@ -70,10 +83,40 @@ BEGIN
     END IF;
   END IF;
   RETURN NEW;
-END $$;
+END $;
 
 CREATE TRIGGER source_rights_gate
 BEFORE UPDATE ON im19.document_versions
 FOR EACH ROW EXECUTE FUNCTION im19.source_rights_publication_gate();
+
+-- A later hold/reject immediately removes an already-published exact version from retrieval.
+-- This quarantines the version but does not erase stored text/embeddings; see the rights runbook.
+CREATE FUNCTION im19.source_rights_revoke_publication()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $
+BEGIN
+  IF NEW.decision <> 'approve' OR NOT NEW.storage_allowed OR NOT NEW.embedding_allowed THEN
+    WITH quarantined AS (
+      UPDATE im19.document_versions
+      SET state='QUARANTINED',
+          checkpoint=checkpoint || jsonb_build_object('error_code','SOURCE_RIGHTS_REVIEW_REVOKED')
+      WHERE source_file_id=NEW.source_file_id
+        AND revision=NEW.revision
+        AND source_content_hash=NEW.content_hash
+        AND state='PUBLISHED'
+      RETURNING id
+    )
+    INSERT INTO im19.audit_events(document_id,event_type,details)
+    SELECT id,'source_rights_publication_quarantined',
+           jsonb_build_object('rights_review_id',NEW.id,'decision',NEW.decision)
+    FROM quarantined;
+  END IF;
+  RETURN NEW;
+END $;
+
+CREATE TRIGGER source_rights_revoke_published
+AFTER INSERT ON im19.source_rights_reviews
+FOR EACH ROW EXECUTE FUNCTION im19.source_rights_revoke_publication();
+
+REVOKE ALL ON FUNCTION im19.source_rights_revoke_publication() FROM PUBLIC;
 
 COMMIT;

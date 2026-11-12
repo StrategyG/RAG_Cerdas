@@ -6,7 +6,7 @@
 - Updated: 2026-11-12
 - Status: Engineering roadmap; production remains BLOCKED
 
-> RAG_Cerdas is the official knowledge-ingestion, knowledge-mining, indexing, retrieval, evidence, and evaluation engine of RUSA AI. It is not a second RAG product. RusaAi remains the control plane and consumes RAG_Cerdas through versioned, authorized contracts.
+> RAG_Cerdas / IM19 is a candidate knowledge-ingestion, knowledge-mining, indexing, retrieval, evidence, and evaluation subsystem in the RUSA AI ecosystem. It has not yet been selected as the canonical operational knowledge store. RusaAi also contains an optional tenant-scoped PostgreSQL/pgvector knowledge service. See [ADR-0001](ADR_0001_CANONICAL_KNOWLEDGE_STORE.md); until that decision is approved, keep both stores isolated and do not enable cross-system writes or a public IM19 API.
 
 ## 1. Program targets — keep counts distinct
 
@@ -26,7 +26,7 @@ Report each stage separately: raw candidates, unique candidates, reviewed units,
 
 ## 2. Architecture ownership
 
-### RAG_Cerdas / IM19 owns
+### RAG_Cerdas / IM19 — current candidate capability
 
 - Source discovery, rights/access gate, ingestion, versioning, and source integrity.
 - PDF/EPUB processing, selective OCR, page/spine provenance.
@@ -34,18 +34,25 @@ Report each stage separately: raw candidates, unique candidates, reviewed units,
 - Chunking, embedding/index lifecycle, lexical/vector retrieval, reranking, evidence assembly, and retrieval evaluation.
 - Durable ingestion/indexing workers, checkpoint, lease fencing, retry, and dead-letter handling.
 
-### RusaAi control plane owns
+These are implemented capabilities of the IM19 candidate, not proof that its database is the canonical RUSA AI store or that it is tenant-safe for public retrieval.
+
+### RusaAi — current control plane and existing knowledge capability
 
 - Supreme Orchestrator, Planner, Task Decomposer, agent registry, task queue, scheduler, and workflow lifecycle.
 - Policy Engine, Tool Gateway, sandbox, approval, audit, and cross-agent authorization.
 - Memory lifecycle and routing, Context Manager, and shared Model Access Gateway.
-- User-facing/API boundary and versioned contracts.
+- The Architecture v2.0 / CPU Deployment v1.0 local memory baseline: SQLite for metadata/state, SQLite FTS5 for full-text search, durable task/checkpoint state, and optional vector search after benchmarking.
+- An optional rusa_knowledge PostgreSQL/pgvector service with tenant-scoped tables, forced RLS, and read-only tenant-authenticated MCP tools. This optional shared service is distinct from the documented device-local SQLite baseline.
 
-RusaAi should use a thin adapter/client to RAG_Cerdas. Do not create a second source ingestion pipeline, vector index, or knowledge database in RusaAi. Record any change to this ownership boundary in an ADR.
+### Canonical-store hold point
+
+The RUSA AI 5M expansion plan leaves the canonical shared corpus schema/store as an open decision. The local SQLite/FTS5 baseline is for device-local metadata, state, and search; the supplied documents do not define it as a shared 5M corpus or specify cross-device replication. The two PostgreSQL implementations also have different security and lifecycle models: the current RusaAi knowledge store has tenant columns and forced tenant RLS; the current IM19 migration has private worker/approver roles and broad private-role policies, but no tenant columns or per-tenant predicates. Neither PostgreSQL store may be silently designated as canonical by this implementation roadmap.
+
+Use [ADR-0001](ADR_0001_CANONICAL_KNOWLEDGE_STORE.md) to evaluate the options. Until an approved decision and migration plan exist, keep the databases isolated, avoid dual writes, and do not expose IM19 as a multi-tenant API. If IM19 is eventually selected, RusaAi may consume it through a thin authenticated adapter/client after the versioned contract and tenant boundary pass review.
 
 ### Security boundary
 
-The current IM19 retriever is a private worker interface, not a multi-tenant public API. Tenant identity must come from a verified principal, not a caller-supplied tenant ID. Enforce tenant/project/source scope inside the database query and authorization boundary before public exposure. Keep the legacy unscoped Edge Function disabled until its tenant-aware successor and cross-tenant tests are approved.
+The current IM19 retriever is a private worker interface, not a multi-tenant public API. The current IM19 migration does not define tenant_id columns or per-tenant RLS predicates; its worker policy is private-role scoped. Tenant identity must come from a verified principal, not a caller-supplied tenant ID. Any public exposure or canonical-store selection requires a tenant-aware schema, database-enforced tenant/project/source scope, least-privilege roles, and independent cross-tenant negative tests. Keep the legacy unscoped Edge Function disabled until its tenant-aware successor and tests are approved.
 
 ## 3. CPU-first and knowledge design
 
@@ -64,12 +71,12 @@ Public source availability is not permission to archive full text. Use source-le
 
 | Phase | Priority | Work | Exit evidence |
 |---|---|---|---|
-| R0 — Baseline/governance | P0 | Refresh main/branch/PR state; review existing PR #17 security and #15 evaluation work; define ownership ADR; synchronize docs | Exact SHA, reviewed PR dependency map, owner and acceptance criteria per issue |
+| R0 — Baseline/governance | P0 | Refresh main/branch/PR state; merge PR #17 security and PR #15 evaluation safeguards after exact-head CI; review RusaAi PR #82; reconcile local SQLite/FTS5 and the two PostgreSQL stores; propose canonical-store ADR | PR #17 and #15 merged with exact-head CI evidence; RusaAi PR #82 remains draft; ADR-0001 is Proposed and records the no-selection hold; R1 acceptance criteria remain open |
 | R1 — Contracts/authorization | P0 | Versioned retrieval/ingestion contract; verified principal; tenant/project scope; trace/task IDs; timeout/error envelope; cross-repo contract tests | Positive and negative authorization tests; zero cross-tenant results |
-| R2 — Source integrity | P0 | OAuth least scopes; revision/block-hash/SHA256; rights gate; parser/OCR quotas; source locator; tombstone and replay semantics | Staging connector evidence; 100% published source/version/location provenance |
+| R2 — Source integrity | P0 | Reconcile existing 784 raw candidate IDs, 50 alternate collisions, 31 provisional Batch 029 notes, 131 domain-only records, and per-file Dropbox rights; revision/block-hash/SHA256; parser/OCR quotas; tombstone/replay | Reviewed canonical ledger; rights and duplicate dispositions; 100% published source/version/location provenance |
 | R3 — Chunk/embedding/index | P0 | Versioned structure-aware chunker; stable IDs; pinned embedding artifacts; finite/dimension checks; resumable batches; atomic index generations | Reproducible replay; no mixed vector spaces; publication read-back |
 | R4 — Retrieval/evaluation | P0 | Indexed lexical search; vector search; RRF; optional reranking/MMR; reviewed graph expansion; human-reviewed qrels; citation/abstention evaluation | Reviewed qrels; Recall@5, MRR@10, citation and abstention report |
-| R5 — Worker and capacity | P0 | Bounded queues, bulk jobs, checkpoints, leases/fencing, backpressure, partition/index strategy, reindex and deletion lineage | 100K/500K/1M/5M staged capacity reports; recovery and resource evidence |
+| R5 — Worker and capacity | P0 | Bounded queues, bulk jobs, checkpoints, leases/fencing, backpressure, partition/index strategy, reindex and deletion lineage; read-only query-plan/latency benchmark | 10K/50K/100K/1M/5M staged capacity reports; EXPLAIN/BUFFERS, recovery, and resource evidence |
 | R6 — Native RUSA integration | P0 | Memory & Knowledge adapter; Orchestrator task contracts; worker jobs; shared model gateway; context/evidence assembly; independent QA | End-to-end agent workflow and grounded-answer evidence |
 | R7 — Operations/security | P0 | TLS/roles/RLS, adversarial parser/prompt tests, SBOM, secrets, metrics, alerts, backup/restore, rollback | Security review, restore drill, runbooks, operational dashboards |
 | R8 — Release | P0 | Staging pilot, scale certification, canary, operator sign-off | All six production gates PASS; release tag and exact CI evidence |
@@ -101,9 +108,9 @@ Agree final thresholds with product, QA, Security, and DevOps before release:
 
 ## 7. Current engineering focus
 
-The current implementation branch moves lexical candidate retrieval from a Python full-corpus scan to PostgreSQL GIN-indexed full-text search, combines bounded lexical and pgvector candidates with RRF, and performs query embedding before opening a database transaction.
+Current main implements PostgreSQL GIN-indexed lexical candidate retrieval instead of the Python full-corpus scan, combines bounded lexical and pgvector candidates with RRF, and performs query embedding before opening a database transaction. The legacy public-search Edge Function now fails closed by default, and the retrieval evaluator requires a structurally consistent human-review evidence envelope before scoring.
 
-This change improves the retrieval architecture but does not certify 5-million-unit capacity. Representative load tests, tenant/project filters, target staging, human-reviewed qrels, and live integration evidence remain mandatory.
+These changes improve retrieval efficiency and governance but do not certify 5-million-unit capacity, provide tenant isolation for IM19, authenticate reviewers against a production identity registry, or select the canonical RUSA AI knowledge store. Representative load tests, a tenant-aware data model if IM19 is selected, target staging, genuinely human-reviewed qrels, and an approved cross-repository contract remain mandatory.
 
 ## 8. GitHub delivery rules
 

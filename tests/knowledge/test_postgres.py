@@ -85,6 +85,16 @@ def approve_source_rights(
         )
 
 
+def authorize_and_approve_source_rights(store, document_id):
+    with store.tx() as conn:
+        conn.execute(
+            "UPDATE im19.source_files SET access_authorized=true "
+            "WHERE id=(SELECT source_file_id FROM im19.document_versions WHERE id=%s)",
+            (document_id,),
+        )
+    approve_source_rights(store, document_id)
+
+
 def worker_store(store):
     with store.tx() as conn:
         conn.execute(
@@ -298,6 +308,7 @@ def test_database_blocks_direct_publication(database):
 
 def test_real_embedding_persistence_and_readback(database):
     doc, _ = discover(database)
+    authorize_and_approve_source_rights(database, doc)
     job = database.claim("worker")
     p = Page("pdf:page:1", "risk management", 1)
     c = Chunk(str(uuid4()), doc, p.locator, p.text, 1, 1, digest(p.text))
@@ -341,6 +352,7 @@ def test_database_rejects_fabricated_unit_quotes_and_worker_source_reconfigurati
     from im19.contracts import KnowledgeUnit
 
     doc, cid = discover(database)
+    authorize_and_approve_source_rights(database, doc)
     job = database.claim("worker")
     text = "Risk management protects capital."
     page = Page("pdf:page:1", text, 1)
@@ -381,6 +393,7 @@ def test_extraction_replay_cannot_mix_changed_text_with_prior_checkpoint(databas
     from im19.contracts import PipelineError
 
     doc, _ = discover(database)
+    authorize_and_approve_source_rights(database, doc)
     job = database.claim("worker")
     page = Page("pdf:page:1", "Original extracted text", 1)
     c = Chunk(str(uuid4()), doc, page.locator, page.text, 1, 1, digest(page.text))
@@ -394,6 +407,7 @@ def test_extraction_replay_cannot_mix_changed_text_with_prior_checkpoint(databas
 
 def test_database_rejects_chunk_content_absent_from_its_page(database):
     doc, _ = discover(database)
+    authorize_and_approve_source_rights(database, doc)
     job = database.claim("worker")
     page = Page("pdf:page:1", "Source text", 1)
     invented = Chunk(
@@ -420,6 +434,44 @@ def test_source_rights_are_revision_bound_and_latest_decision_wins(database):
         connection_id=cid,
     )
     assert database.load(new_doc)["rights_approved"] is False
+
+
+def test_source_rights_lookup_uses_document_version_not_mutable_source_head(database):
+    doc, _ = discover(database)
+    authorize_and_approve_source_rights(database, doc)
+    before = database.load(doc)
+    with database.tx() as conn:
+        conn.execute(
+            "UPDATE im19.source_files SET revision='next-revision',content_hash=%s WHERE id=%s",
+            (digest(b"next revision"), before["source_file_id"]),
+        )
+    assert database.load(doc)["rights_approved"] is True
+    with pytest.raises(PipelineError, match="SOURCE_SUPERSEDED"):
+        database.assert_source_rights(doc)
+
+
+def test_worker_cannot_insert_document_version_directly_as_published(database):
+    doc, _ = discover(database)
+    source = database.load(doc)
+    worker = worker_store(database)
+    with pytest.raises(psycopg.errors.RaiseException, match="must begin at DISCOVERED"):
+        with worker.tx() as conn:
+            conn.execute(
+                "INSERT INTO im19.document_versions(id,source_file_id,revision,source_content_hash,pipeline_version,state) "
+                "VALUES(%s,%s,%s,%s,'fixture','PUBLISHED')",
+                (str(uuid4()), source["source_file_id"], source["revision"], source["source_content_hash"]),
+            )
+
+
+def test_worker_cannot_persist_extraction_without_source_rights(database):
+    doc, _ = discover(database)
+    with database.tx() as conn:
+        conn.execute("UPDATE im19.source_files SET access_authorized=true")
+    job = database.claim("worker")
+    page = Page("pdf:page:1", "Source text", 1)
+    chunk = Chunk(str(uuid4()), doc, page.locator, page.text, 1, 1, digest(page.text))
+    with pytest.raises(PipelineError, match="SOURCE_RIGHTS_REVIEW_REQUIRED"):
+        database.save_extraction(job, [page], [chunk])
 
 
 def test_source_rights_reviews_are_append_only_and_worker_cannot_write(database):

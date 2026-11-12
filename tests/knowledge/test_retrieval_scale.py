@@ -71,3 +71,55 @@ def test_retrieval_uses_bounded_database_lexical_and_vector_candidates(monkeypat
     assert "extensions.<=>" in dense_sql
     assert "LIMIT 50" in dense_sql
     assert "SELECT count(*)" not in dense_sql
+
+
+class RowsCursor:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def fetchall(self):
+        return self.rows
+
+
+class GraphRecordingConnection(RecordingConnection):
+    def execute(self, statement, params=()):
+        self.statements.append((statement, params))
+        if len(self.statements) == 1:
+            return RowsCursor(
+                [
+                    {
+                        "chunk_id": "chunk-1",
+                        "document_id": "doc-1",
+                        "locator": "pdf:page:1",
+                        "page_start": 1,
+                        "page_end": 1,
+                        "text_content": "risk management evidence",
+                        "content_hash": "a" * 64,
+                        "title": "Risk handbook",
+                        "source_uri": "https://example.invalid/risk.pdf",
+                        "review": {},
+                    }
+                ]
+            )
+        return EmptyCursor()
+
+
+def test_graph_expansion_joins_relation_endpoints_through_knowledge_nodes():
+    store = RecordingStore()
+    store.connection = GraphRecordingConnection()
+    retriever = HybridRetriever(store, FixtureEmbedder(store))
+
+    result = retriever.search("risk management", graph=True)
+
+    assert result["status"] == "EVIDENCE_FOUND"
+    assert len(store.connection.statements) == 3
+    graph_sql, graph_params = store.connection.statements[2]
+    assert "JOIN im19.knowledge_nodes src ON src.id=rel.source_id" in graph_sql
+    assert (
+        "JOIN im19.knowledge_nodes tgt ON tgt.id=rel.target_id "
+        "AND tgt.node_type='Claim'"
+    ) in graph_sql
+    assert "JOIN im19.knowledge_units tgt_unit ON tgt_unit.id=tgt.id" in graph_sql
+    assert "c.id=ANY(tgt_unit.source_chunk_ids)" in graph_sql
+    assert "JOIN im19.knowledge_units src" not in graph_sql
+    assert graph_params == [["doc-1"]]

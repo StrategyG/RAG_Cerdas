@@ -218,6 +218,33 @@ class PostgresStore:
                 (lease_seconds, job["id"]),
             )
 
+    def _assert_source_rights(self, conn, document_id):
+        row = conn.execute(
+            "SELECT f.access_authorized,f.deleted,"
+            "(f.revision=v.revision AND f.content_hash=v.source_content_hash) AS current_version,"
+            "COALESCE((rights.decision='approve' AND rights.storage_allowed AND rights.embedding_allowed),false) AS rights_approved "
+            "FROM im19.document_versions v JOIN im19.source_files f ON f.id=v.source_file_id "
+            "LEFT JOIN LATERAL (SELECT r.decision,r.storage_allowed,r.embedding_allowed "
+            "FROM im19.source_rights_reviews r WHERE r.source_file_id=v.source_file_id "
+            "AND r.revision=v.revision AND r.content_hash=v.source_content_hash "
+            "ORDER BY r.created_at DESC,r.id DESC LIMIT 1) rights ON true "
+            "WHERE v.id=%s",
+            (document_id,),
+        ).fetchone()
+        if row is None:
+            raise PipelineError("FAILED", "DOCUMENT_NOT_FOUND")
+        if row["deleted"] or not row["current_version"]:
+            raise PipelineError("SUPERSEDED", "SOURCE_SUPERSEDED")
+        if not row["access_authorized"]:
+            raise PipelineError("NEEDS_HUMAN_REVIEW", "ACCESS_AUTHORIZATION_REQUIRED")
+        if not row["rights_approved"]:
+            raise PipelineError("NEEDS_HUMAN_REVIEW", "SOURCE_RIGHTS_REVIEW_REQUIRED")
+
+    def assert_source_rights(self, document_id):
+        """Recheck access and exact-version storage/embedding rights before every stage."""
+        with self.tx() as conn:
+            self._assert_source_rights(conn, document_id)
+
     def load(self, document_id):
         with self.tx() as conn:
             row = conn.execute(
@@ -226,8 +253,9 @@ class PostgresStore:
                 "rights.id AS rights_review_id,rights.decision AS rights_decision "
                 "FROM im19.document_versions v JOIN im19.source_files f ON f.id=v.source_file_id "
                 "LEFT JOIN LATERAL (SELECT r.id,r.decision,r.storage_allowed,r.embedding_allowed "
-                "FROM im19.source_rights_reviews r WHERE r.source_file_id=f.id AND r.revision=f.revision "
-                "AND r.content_hash=f.content_hash ORDER BY r.created_at DESC,r.id DESC LIMIT 1) rights ON true "
+                "FROM im19.source_rights_reviews r WHERE r.source_file_id=v.source_file_id "
+                "AND r.revision=v.revision AND r.content_hash=v.source_content_hash "
+                "ORDER BY r.created_at DESC,r.id DESC LIMIT 1) rights ON true "
                 "WHERE v.id=%s",
                 (document_id,),
             ).fetchone()
@@ -267,6 +295,7 @@ class PostgresStore:
     def save_extraction(self, job, pages, chunks):
         with self.tx() as conn:
             self.fence(conn, job)
+            self._assert_source_rights(conn, job["document_id"])
             for page in pages:
                 conn.execute(
                     "INSERT INTO im19.document_pages VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
@@ -353,6 +382,7 @@ class PostgresStore:
     def save_units(self, job, units):
         with self.tx() as conn:
             self.fence(conn, job)
+            self._assert_source_rights(conn, job["document_id"])
             for u in units:
                 conn.execute(
                     "INSERT INTO im19.knowledge_units(id,document_id,concept,category,subcategory,knowledge_type,claim,evidence_text,locator,"
@@ -478,6 +508,7 @@ class PostgresStore:
         rid = stable_id(str(job["document_id"]), model_version, "rubric-v2")
         with self.tx() as conn:
             self.fence(conn, job)
+            self._assert_source_rights(conn, job["document_id"])
             inserted = conn.execute(
                 "INSERT INTO im19.review_runs VALUES(%s,%s,%s,'rubric-v2',%s,now()) ON CONFLICT DO NOTHING RETURNING id",
                 (rid, job["document_id"], model_version, Jsonb(review)),
@@ -529,6 +560,7 @@ class PostgresStore:
             raise PipelineError("FAILED", "EMBEDDING_COUNT_MISMATCH")
         with self.tx() as conn:
             self.fence(conn, job)
+            self._assert_source_rights(conn, job["document_id"])
             for chunk, vec in zip(chunks, vectors, strict=True):
                 validate_vector(vec)
                 conn.execute(
@@ -563,11 +595,13 @@ class PostgresStore:
             authorized = conn.execute(
                 "UPDATE im19.document_versions v SET state='DISCOVERED',checkpoint=v.checkpoint-'error_code' "
                 "FROM im19.source_files f WHERE v.source_file_id=f.id AND f.access_authorized AND NOT f.deleted "
+                "AND f.revision=v.revision AND f.content_hash=v.source_content_hash "
                 "AND v.state='NEEDS_HUMAN_REVIEW' "
                 "AND v.checkpoint->>'error_code' IN ('ACCESS_AUTHORIZATION_REQUIRED','SOURCE_RIGHTS_REVIEW_REQUIRED') "
                 "AND (SELECT r.decision='approve' AND r.storage_allowed AND r.embedding_allowed "
-                "FROM im19.source_rights_reviews r WHERE r.source_file_id=f.id AND r.revision=f.revision "
-                "AND r.content_hash=f.content_hash ORDER BY r.created_at DESC,r.id DESC LIMIT 1) IS TRUE RETURNING v.id"
+                "FROM im19.source_rights_reviews r WHERE r.source_file_id=v.source_file_id "
+                "AND r.revision=v.revision AND r.content_hash=v.source_content_hash "
+                "ORDER BY r.created_at DESC,r.id DESC LIMIT 1) IS TRUE RETURNING v.id"
             ).fetchall()
             for row in authorized:
                 conn.execute(

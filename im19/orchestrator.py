@@ -121,7 +121,10 @@ class Orchestrator:
                 return
             step("VALIDATED")
         if state == "VALIDATED":
+            self.store.assert_source_rights(doc["id"])
             data = self.dropbox.download(doc["source_metadata"])
+            # A rights/access change during download blocks before the blob is persisted.
+            self.store.assert_source_rights(doc["id"])
             path = self._blob(doc["id"])
             temp = path.with_suffix("." + str(job["lease_token"]) + ".tmp")
             try:
@@ -135,6 +138,11 @@ class Orchestrator:
             step("DOWNLOADED", content_sha256=hashlib.sha256(data).hexdigest())
         if state == "DOWNLOADED":
             path = self._blob(doc["id"])
+            try:
+                self.store.assert_source_rights(doc["id"])
+            except PipelineError:
+                path.unlink(missing_ok=True)
+                raise
             if not path.is_file():
                 # Runtime storage may have been lost; re-download the pinned revision.
                 data = self.dropbox.download(doc["source_metadata"])
@@ -154,12 +162,14 @@ class Orchestrator:
             self.store.save_extraction(job, pages, chunks)
             step("PARSED")
         if state == "PARSED":
+            self.store.assert_source_rights(doc["id"])
             pages, chunks = self.store.extraction(doc["id"])
             classification = Classifier(self.model).classify(chunks)
             units = MiningEngine(self.model).mine(chunks, classification)
             self.store.save_units(job, units)
             step("MINED", classification=classification)
         if state == "MINED":
+            self.store.assert_source_rights(doc["id"])
             pages, chunks = self.store.extraction(doc["id"])
             review = ReviewEngine(self.model).review(
                 self.store.units(doc["id"]),
@@ -178,6 +188,7 @@ class Orchestrator:
                 )
             step("REVIEWED")
         if state == "REVIEWED":
+            self.store.assert_source_rights(doc["id"])
             decision = publication_decision(
                 doc["review"],
                 doc["classification"],
