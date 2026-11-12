@@ -146,7 +146,7 @@ BEGIN
   NEW.revoked_by := session_user;
   RETURN NEW;
 END
-$;
+$$;
 
 CREATE TRIGGER reviewer_revocation_insert_gate
 BEFORE INSERT ON im19_security.reviewer_identity_revocations
