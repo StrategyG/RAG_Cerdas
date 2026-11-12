@@ -20,7 +20,7 @@ The lexical score is PostgreSQL ts_rank_cd; it is not BM25. The pure-Python bm25
 
 ## Scale boundary
 
-This removes the full-corpus Python scan, but it does not certify 5-million-unit capacity. The GIN/HNSW indexes, tenant/project filtering, query plans, update rate, memory, disk, and p95 latency still require representative staging benchmarks. The current retriever is a private worker interface; it must not be exposed as a multi-tenant public API until caller identity is verified and tenant scope is enforced inside the database boundary.
+This removes the full-corpus Python scan, but it does not certify 5-million-unit capacity. The GIN/HNSW indexes, query plans, update rate, memory, disk, and p95 latency still require representative staging benchmarks. The current IM19 schema has no tenant_id columns or per-tenant RLS predicates; its broad worker policy is private-role scoped, not tenant isolation. The retriever is a private worker interface and must not be exposed as a multi-tenant public API. The canonical RUSA AI knowledge store is also unresolved: RusaAi main contains a separate optional tenant-scoped PostgreSQL/pgvector store. See [ADR-0001](ADR_0001_CANONICAL_KNOWLEDGE_STORE.md); do not dual-write or cross-read until a decision and contract are approved.
 
 The IM19 schema is private and migrations are never applied by worker startup. The new migration is additive. Apply it only to an approved, backup-restored staging database after reviewing the target schema. For a populated production-sized index, assess index build locking and use the platform's approved online-index procedure rather than blindly applying DDL during service hours.
 
