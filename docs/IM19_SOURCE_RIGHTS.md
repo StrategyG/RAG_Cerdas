@@ -24,7 +24,7 @@ Do not infer rights from Dropbox possession, public availability, repository vis
 
 ## Controlled write path
 
-Only a trusted human approver login that is a member of im19_approver can append rights decisions. The worker role has read-only access to the rights ledger. Review rows are append-only.
+Only a trusted human approver login that is a member of im19_approver can append rights decisions. The worker role has read-only access to the rights ledger. Review rows are append-only. This role separation is not tenant isolation; IM19 remains a private worker interface until tenant/project ownership and database-enforced predicates are implemented.
 
 Example transaction for an approved source (replace the placeholders with values obtained from the approved review record):
 
