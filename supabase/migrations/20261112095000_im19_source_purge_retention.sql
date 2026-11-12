@@ -582,6 +582,12 @@ CREATE FUNCTION im19_security.purge_job_write_gate()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $
 DECLARE v_state text;
 BEGIN
+  IF TG_OP='UPDATE' AND NEW.status='blocked'
+     AND NEW.last_error_code='PURGE_PENDING'
+     AND NEW.lease_token IS NULL AND NEW.lease_owner IS NULL
+     AND NEW.lease_expires_at IS NULL THEN
+    RETURN NEW;
+  END IF;
   SELECT v.state INTO v_state FROM im19.document_versions v
   WHERE v.id=NEW.document_id;
   IF v_state IS NULL OR v_state IN ('QUARANTINED','SUPERSEDED')
