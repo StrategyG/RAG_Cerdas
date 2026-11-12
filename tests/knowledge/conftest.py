@@ -82,9 +82,10 @@ def database(pg_dsn):
         conn.execute("DROP SCHEMA IF EXISTS im19 CASCADE")
         conn.execute("CREATE SCHEMA IF NOT EXISTS extensions")
         conn.execute("CREATE EXTENSION IF NOT EXISTS vector SCHEMA extensions")
-        conn.execute(
-            Path(
-                "supabase/migrations/20261025010000_im19_knowledge_intelligence.sql"
-            ).read_text()
+        migration_paths = (
+            "supabase/migrations/20261025010000_im19_knowledge_intelligence.sql",
+            "supabase/migrations/20261112090000_im19_lexical_retrieval_index.sql",
         )
+        for migration_path in migration_paths:
+            conn.execute(Path(migration_path).read_text())
     return PostgresStore(pg_dsn, allow_local_test=True)

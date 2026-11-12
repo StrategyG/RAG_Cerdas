@@ -1,17 +1,25 @@
-"""BM25 + pgvector + RRF, metadata filters and citation-safe extractive answers.
+"""PostgreSQL GIN lexical + pgvector + RRF retrieval with citation-safe excerpts.
+
+The production path retrieves bounded candidate sets inside PostgreSQL; it never
+loads the complete published corpus into Python. The small-corpus bm25() helper is
+kept only as an offline reference for deterministic unit tests.
 
 This API returns source excerpts, never manufactures an LLM answer or page.
 Graph expansion includes reviewed edges only; graph evidence never replaces sources.
 """
 
 from __future__ import annotations
+
 from collections import Counter
 import json
 import math
 import re
+
 from im19.contracts import PipelineError
 
 EMBED_MODEL = "intfloat/multilingual-e5-small"
+LEXICAL_CANDIDATE_LIMIT = 50
+DENSE_CANDIDATE_LIMIT = 50
 
 
 def validate_vector(vector):
@@ -47,7 +55,7 @@ def tokens(text):
 
 
 def bm25(query, rows, *, k1=1.5, b=0.75):
-    """Exact BM25 over the bounded filtered corpus, not a renamed tsvector rank."""
+    """Exact BM25 reference scorer for small offline fixtures; not the DB query path."""
     if not rows:
         return []
     terms = set(tokens(query))
@@ -108,9 +116,8 @@ class E5Embedder:
 
 
 class HybridRetriever:
-    def __init__(self, store, embedder, *, max_corpus_chunks=20000, reranker=None):
-        self.store, self.embedder = store, embedder
-        self.max_corpus_chunks, self.reranker = max_corpus_chunks, reranker
+    def __init__(self, store, embedder, *, reranker=None):
+        self.store, self.embedder, self.reranker = store, embedder, reranker
 
     def search(self, query, *, filters=None, limit=5, graph=False):
         if (
@@ -174,31 +181,54 @@ class HybridRetriever:
             " FROM im19.chunks c JOIN im19.document_versions v ON v.id=c.document_id "
             "JOIN im19.source_files f ON f.id=v.source_file_id WHERE " + where
         )
-        fields = "c.id AS chunk_id,c.document_id,c.locator,c.page_start,c.page_end,c.text_content,c.content_hash,f.filename AS title,f.source_uri,v.review"
+        fields = (
+            "c.id AS chunk_id,c.document_id,c.locator,c.page_start,c.page_end,"
+            "c.text_content,c.content_hash,f.filename AS title,f.source_uri,v.review"
+        )
+
+        # Model inference happens before opening a database transaction. This keeps
+        # the connection/transaction out of the CPU-bound embedding operation.
+        query_vector = self.embedder.query(query)
+        vector_json = json.dumps(query_vector)
+
+        # Keep the expression identical to the additive GIN index migration.
+        fts_vector = (
+            "pg_catalog.to_tsvector("
+            "'pg_catalog.simple'::pg_catalog.regconfig, c.text_content)"
+        )
+        fts_query = (
+            "pg_catalog.plainto_tsquery("
+            "'pg_catalog.simple'::pg_catalog.regconfig, %s)"
+        )
+
         with self.store.tx() as conn:
-            # Count before transfer; exceeding quota abstains instead of truncating BM25 silently.
-            count = conn.execute("SELECT count(*) AS n" + base, params).fetchone()["n"]
-            if count > self.max_corpus_chunks:
-                raise PipelineError(
-                    "NEEDS_HUMAN_REVIEW", "BM25_CORPUS_QUOTA_USE_METADATA_FILTERS"
-                )
-            rows = conn.execute(
-                "SELECT " + fields + base + " ORDER BY c.id", params
+            lexical_sql = (
+                "SELECT "
+                + fields
+                + f",pg_catalog.ts_rank_cd({fts_vector},{fts_query}) AS lexical_score"
+                + base
+                + f" AND {fts_vector} @@ {fts_query}"
+                + " ORDER BY lexical_score DESC,c.id LIMIT "
+                + str(LEXICAL_CANDIDATE_LIMIT)
+            )
+            keyword = conn.execute(
+                lexical_sql, [query, *params, query]
             ).fetchall()
-            keyword = bm25(query, rows)[:50]
-            query_vector = self.embedder.query(query)
-            vector_json = json.dumps(query_vector)
+
             dense = conn.execute(
                 "SELECT "
                 + fields
                 + ",1-(e.embedding OPERATOR(extensions.<=>) %s::extensions.vector) AS similarity "
-                "FROM im19.embeddings e JOIN im19.chunks c ON c.id=e.chunk_id JOIN im19.document_versions v ON v.id=c.document_id "
+                "FROM im19.embeddings e JOIN im19.chunks c ON c.id=e.chunk_id "
+                "JOIN im19.document_versions v ON v.id=c.document_id "
                 "JOIN im19.source_files f ON f.id=v.source_file_id WHERE "
                 + where
                 + " AND e.model_version=%s AND e.content_hash=c.content_hash "
-                "ORDER BY e.embedding OPERATOR(extensions.<=>) %s::extensions.vector LIMIT 50",
+                "ORDER BY e.embedding OPERATOR(extensions.<=>) %s::extensions.vector LIMIT "
+                + str(DENSE_CANDIDATE_LIMIT),
                 [vector_json, *params, self.embedder.version, vector_json],
             ).fetchall()
+
             # Uncalibrated similarity is a ranking score, not proof of sufficient evidence.
             # Require lexical overlap to avoid returning unrelated nearest neighbours as evidence.
             dense = [
@@ -208,15 +238,22 @@ class HybridRetriever:
             if graph and ranked:
                 ids = [r["document_id"] for r in ranked[:limit]]
                 expanded = conn.execute(
-                    "SELECT DISTINCT " + fields + " FROM im19.knowledge_relations rel "
-                    "JOIN im19.knowledge_units src ON src.id=rel.source_id JOIN im19.knowledge_units tgt ON tgt.id=rel.target_id "
-                    "JOIN im19.chunks c ON c.id=ANY(tgt.source_chunk_ids) JOIN im19.document_versions v ON v.id=c.document_id "
-                    "JOIN im19.source_files f ON f.id=v.source_file_id WHERE rel.review_status='reviewed' AND src.document_id=ANY(%s) AND "
+                    "SELECT DISTINCT "
+                    + fields
+                    + " FROM im19.knowledge_relations rel "
+                    "JOIN im19.knowledge_nodes src ON src.id=rel.source_id "
+                    "JOIN im19.knowledge_nodes tgt ON tgt.id=rel.target_id AND tgt.node_type='Claim' "
+                    "JOIN im19.knowledge_units tgt_unit ON tgt_unit.id=tgt.id "
+                    "JOIN im19.chunks c ON c.id=ANY(tgt_unit.source_chunk_ids) "
+                    "JOIN im19.document_versions v ON v.id=c.document_id "
+                    "JOIN im19.source_files f ON f.id=v.source_file_id "
+                    "WHERE rel.review_status='reviewed' AND src.document_id=ANY(%s) AND "
                     + where
                     + " LIMIT 20",
                     [ids, *params],
                 ).fetchall()
                 ranked = rrf(ranked, expanded)
+
         if self.reranker:
             ranked = self.reranker(query, ranked)
         evidence = []
@@ -256,7 +293,11 @@ class HybridRetriever:
             "query": query,
             "evidence": evidence,
             "answer_mode": "source_excerpts_only",
+            "retrieval_backend": "postgresql_gin_fts+pgvector_hnsw+rrf",
             "limitations": [
-                "Evidence relevance and factual truth require assessment; lexical overlap is a conservative pilot gate."
+                "Lexical ranking uses PostgreSQL ts_rank_cd with the simple configuration; it is not BM25.",
+                "Candidate retrieval is bounded in the database; 5-million-unit capacity still requires representative load testing.",
+                "This IM19 retriever is a private worker interface, not a multi-tenant public API. Verified principal and database-enforced tenant scope remain required before public exposure.",
+                "Evidence relevance and factual truth require assessment; lexical overlap is a conservative pilot gate.",
             ],
         }
