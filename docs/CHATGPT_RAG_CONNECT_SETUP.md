@@ -60,3 +60,17 @@ The existing page-aware ingestion worker uses `rag_pipeline.py`, the `intfloat/m
 - [ ] After ingestion, results have valid document title and one-based page citation.
 - [ ] Ask ChatGPT a question whose answer is in a known PDF; confirm the action is called and each source-grounded claim cites a returned page.
 - [ ] Ask a question absent from the indexed corpus; confirm ChatGPT reports insufficient RAG evidence rather than fabricating citations.
+
+
+## Production security gate (2026-11-05)
+
+The legacy `institutional-rag-search` Edge Function calls a service-role retrieval RPC that has no end-user tenant authorization context. It is therefore **not a multi-tenant public search API**.
+
+The function now fails closed unless both of these deployment variables are explicitly set:
+
+- `RAG_PUBLIC_SEARCH_ENABLED=true`
+- `RAG_DEPLOYMENT_SCOPE=single-tenant`
+
+The shared `RAG_CHATGPT_API_KEY` must be at least 32 characters. This mode is only for an explicitly approved single-tenant pilot. It must not be enabled for a multi-tenant Cataran deployment.
+
+For multi-tenant production, replace the legacy path with a tenant-aware retrieval RPC/schema and verified caller identity. The tenant identity must be derived from a signed, verified credential and enforced inside the database query/RLS boundary; a caller-supplied tenant ID or shared API key is not sufficient. Keep the legacy Edge Function disabled until that implementation and independent cross-tenant tests are complete.

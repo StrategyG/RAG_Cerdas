@@ -24,13 +24,36 @@ function constantTimeEqual(a: string, b: string): boolean {
 function authenticate(req: Request): boolean {
   const expected = Deno.env.get("RAG_CHATGPT_API_KEY") ?? "";
   const supplied = req.headers.get("x-rag-api-key") ?? "";
-  return constantTimeEqual(supplied, expected);
+  // Do not accept weak or absent shared credentials.
+  return expected.length >= 32 && constantTimeEqual(supplied, expected);
+}
+
+function publicSearchModeEnabled(): boolean {
+  // This legacy RPC has no tenant predicate or end-user authorization context.
+  // It is disabled by default and may only run as an explicitly approved
+  // single-tenant pilot until a tenant-aware schema/RPC is deployed.
+  return Deno.env.get("RAG_PUBLIC_SEARCH_ENABLED") === "true" &&
+    Deno.env.get("RAG_DEPLOYMENT_SCOPE") === "single-tenant";
 }
 
 async function keywordSearch(query: string, limit: number) {
-  const baseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/$/, "");
+  const rawBaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  let parsedBaseUrl: URL;
+  try {
+    parsedBaseUrl = new URL(rawBaseUrl);
+  } catch {
+    throw new Error("Server database configuration is incomplete");
+  }
+  if (
+    parsedBaseUrl.protocol !== "https:" ||
+    parsedBaseUrl.username ||
+    parsedBaseUrl.password
+  ) {
+    throw new Error("Server database endpoint must use HTTPS without URL credentials");
+  }
+  const baseUrl = rawBaseUrl.replace(/\/$/, "");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (!baseUrl || !serviceKey) throw new Error("Server database configuration is incomplete");
+  if (!serviceKey) throw new Error("Server database configuration is incomplete");
 
   const response = await fetch(`${baseUrl}/rest/v1/rpc/rag_worker_match_keyword`, {
     method: "POST",
@@ -80,6 +103,13 @@ async function keywordSearch(query: string, limit: number) {
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  if (!publicSearchModeEnabled()) {
+    return json({
+      error: "RAG public search is disabled until tenant-scoped authorization is deployed",
+      code: "TENANT_AUTHORIZATION_REQUIRED",
+    }, 503);
+  }
 
   if (!authenticate(req)) return json({ error: "Unauthorized" }, 401);
 
