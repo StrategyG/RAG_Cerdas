@@ -11,9 +11,9 @@ The new migration introduces a private im19_security schema:
 
 - reviewer_identities binds one PostgreSQL LOGIN role OID and role name to one stable, non-PII reviewer ID.
 - reviewer_identity_revocations is an append-only revocation ledger.
-- Registration is accepted only for an existing least-privileged LOGIN role with a direct im19_approver membership (without admin option) and no im19_worker membership. Superuser, BYPASSRLS, role-creation, database-creation, replication, and NOINHERIT roles are rejected.
+- Registration is accepted only for an existing least-privileged LOGIN role with a direct im19_approver membership (without admin option). Its complete direct and transitive role-membership closure may contain im19_approver only; additional group roles, including roles inherited through im19_approver, are rejected. Superuser, BYPASSRLS, role-creation, database-creation, replication, and NOINHERIT roles are rejected.
 - A reviewer ID can have only one active login principal at a time. Rotate by revoking the old principal and registering a new one.
-- Both human_approvals and source_rights_reviews validate session_user and require the supplied reviewer_id to match the registered identity.
+- Both human_approvals and source_rights_reviews validate session_user and require the supplied reviewer_id to match the registered identity. The role-membership restriction is rechecked at every decision insert, so later grants of another group role fail closed.
 - The trigger does not trust current_user, a request field, or a custom PostgreSQL setting.
 - The registry schema is not granted to PUBLIC, im19_worker, or im19_approver. Registration and revocation are administrator operations.
 - Registry and revocation records are append-only. Registration, revocation, and human-decision timestamps/actor fields are stamped by database triggers.
@@ -22,7 +22,7 @@ A shared database login or shared pooler credential cannot distinguish individua
 
 ## Provisioning
 
-1. An administrator provisions one dedicated least-privileged LOGIN role for each human reviewer and grants it membership in im19_approver only. Do not use the worker login, a role with BYPASSRLS/superuser privileges, or a shared service login.
+1. An administrator provisions one dedicated least-privileged LOGIN role for each human reviewer and grants it membership in im19_approver only. Do not grant it any other group role, directly or transitively. Do not use the worker login, a role with BYPASSRLS/superuser privileges, or a shared service login.
 2. Register the login principal as administrator. Replace the example values with a real role name and a stable, non-PII reviewer identifier:
 
    INSERT INTO im19_security.reviewer_identities (database_role_oid, database_login_role, reviewer_id, display_name) SELECT pg_catalog.to_regrole('im19_reviewer_alice')::oid, 'im19_reviewer_alice', 'reviewer:alice', 'Reviewer Alice' WHERE EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname='im19_reviewer_alice' AND rolcanlogin) AND EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members WHERE member=pg_catalog.to_regrole('im19_reviewer_alice')::oid AND roleid=pg_catalog.to_regrole('im19_approver')::oid AND NOT admin_option);
