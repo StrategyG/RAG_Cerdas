@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import unittest
 from pathlib import Path
@@ -13,6 +14,13 @@ from jsonschema import Draft202012Validator, FormatChecker
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = ROOT / "cataran" / "contracts" / "v1" / "platform-event.schema.json"
 FIXTURE_PATH = ROOT / "cataran" / "contracts" / "v1" / "fixtures" / "platform-event.valid.json"
+PIN_PATH = ROOT / "cataran" / "contracts" / "v1" / "UPSTREAM_PIN.json"
+
+
+def git_blob_sha1(path: Path) -> str:
+    data = path.read_bytes()
+    header = b"blob " + str(len(data)).encode("ascii") + b"\x00"
+    return hashlib.sha1(header + data).hexdigest()
 
 
 class PlatformEventSchemaTests(unittest.TestCase):
@@ -35,6 +43,14 @@ class PlatformEventSchemaTests(unittest.TestCase):
 
     def test_canonical_fixture_is_valid(self) -> None:
         self.assert_valid(self.fixture)
+
+    def test_local_snapshot_matches_exact_upstream_blob_pins(self) -> None:
+        pin = json.loads(PIN_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(pin["contract_status"], "PROVISIONAL")
+        self.assertEqual(pin["canonical_candidate_repository"], "StrategyG/Universal-Generative-AI")
+        self.assertEqual(pin["canonical_candidate_pull_request"], 34)
+        self.assertEqual(git_blob_sha1(SCHEMA_PATH), pin["schema_git_blob_sha1"])
+        self.assertEqual(git_blob_sha1(FIXTURE_PATH), pin["fixture_git_blob_sha1"])
 
     def test_nullable_project_and_service_actor_are_supported(self) -> None:
         event = copy.deepcopy(self.fixture)
