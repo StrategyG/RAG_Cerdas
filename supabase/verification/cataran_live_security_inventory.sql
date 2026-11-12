@@ -1,6 +1,8 @@
 -- Read-only security and migration inventory for Cataran/Supabase.
 -- Run in the Supabase SQL Editor using a privileged inspection role.
--- This script deliberately performs SELECT statements only.
+-- This script deliberately performs SELECT statements only and opens a read-only transaction.
+
+BEGIN TRANSACTION READ ONLY;
 
 -- 1. Schema existence and API-role USAGE.
 select
@@ -83,3 +85,5 @@ select
 from pg_extension e
 join pg_namespace n on n.oid = e.extnamespace
 order by e.extname;
+
+COMMIT;
