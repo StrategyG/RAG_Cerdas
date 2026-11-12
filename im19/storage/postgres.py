@@ -22,26 +22,42 @@ class PostgresStore:
         self.dsn = dsn
 
     @contextmanager
-    def tx(self):
+    def tx(self, *, statement_timeout="30s", lock_timeout="5s"):
         with psycopg.connect(
             self.dsn, row_factory=dict_row, connect_timeout=10
         ) as conn:
-            conn.execute("SET LOCAL statement_timeout='30s'")
-            conn.execute("SET LOCAL lock_timeout='5s'")
+            conn.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                (statement_timeout,),
+            )
+            conn.execute(
+                "SELECT set_config('lock_timeout', %s, true)",
+                (lock_timeout,),
+            )
             yield conn
 
     def check_role(self):
         with self.tx() as conn:
             row = conn.execute(
-                "SELECT rolsuper,rolbypassrls,pg_has_role(current_user,'im19_approver','member') AS approver,pg_has_role(current_user,'im19_worker','member') AS worker FROM pg_roles WHERE rolname=current_user"
+                "SELECT r.rolsuper,r.rolbypassrls,"
+                "pg_has_role(session_user,'im19_approver','member') AS approver,"
+                "pg_has_role(session_user,'im19_worker','member') AS worker,"
+                "EXISTS(SELECT 1 FROM im19_security.worker_storage_nodes n "
+                "WHERE n.database_role_oid=pg_catalog.to_regrole(session_user::text)::oid "
+                "AND n.database_login_role=session_user "
+                "AND NOT EXISTS(SELECT 1 FROM im19_security.worker_storage_node_revocations x "
+                "WHERE x.database_role_oid=n.database_role_oid)) AS storage_node_registered "
+                "FROM pg_catalog.pg_roles r WHERE r.rolname=session_user"
             ).fetchone()
             if (
-                row["rolsuper"]
+                row is None
+                or row["rolsuper"]
                 or row["rolbypassrls"]
                 or row["approver"]
                 or not row["worker"]
+                or not row["storage_node_registered"]
             ):
-                raise PipelineError("AUTH_BLOCKED", "OVERPRIVILEGED_DATABASE_LOGIN")
+                raise PipelineError("AUTH_BLOCKED", "OVERPRIVILEGED_OR_UNREGISTERED_WORKER_LOGIN")
 
     def audit(self, conn, document_id, event, details):
         conn.execute(
@@ -193,7 +209,7 @@ class PostgresStore:
                 self.audit(conn, row["document_id"], "dead_letter", {})
             row = conn.execute(
                 "WITH candidate AS (SELECT j.id FROM im19.ingestion_jobs j JOIN im19.document_versions v ON v.id=j.document_id "
-                "WHERE j.attempts<j.max_attempts AND v.state<>'SUPERSEDED' AND (%s::uuid IS NULL OR v.id=%s::uuid) AND ((j.status IN ('queued','retry') AND j.available_at<=now()) "
+                "WHERE j.attempts<j.max_attempts AND v.state NOT IN ('SUPERSEDED','QUARANTINED') AND (%s::uuid IS NULL OR v.id=%s::uuid) AND ((j.status IN ('queued','retry') AND j.available_at<=now()) "
                 "OR (j.status='running' AND j.lease_expires_at<now())) ORDER BY j.available_at FOR UPDATE OF j SKIP LOCKED LIMIT 1) "
                 "UPDATE im19.ingestion_jobs j SET status='running',attempts=attempts+1,lease_owner=%s,lease_token=%s,"
                 "lease_expires_at=now()+make_interval(secs=>%s),updated_at=now() FROM candidate c WHERE j.id=c.id RETURNING j.*",
@@ -204,7 +220,7 @@ class PostgresStore:
     def fence(self, conn, job):
         row = conn.execute(
             "SELECT j.id FROM im19.ingestion_jobs j JOIN im19.document_versions v ON v.id=j.document_id "
-            "WHERE j.id=%s AND j.status='running' AND j.lease_token=%s AND j.lease_expires_at>now() AND v.state<>'SUPERSEDED' FOR UPDATE OF j,v",
+            "WHERE j.id=%s AND j.status='running' AND j.lease_token=%s AND j.lease_expires_at>now() AND v.state NOT IN ('SUPERSEDED','QUARANTINED') FOR UPDATE OF j,v",
             (job["id"], job["lease_token"]),
         ).fetchone()
         if not row:
@@ -220,7 +236,7 @@ class PostgresStore:
 
     def _assert_source_rights(self, conn, document_id):
         row = conn.execute(
-            "SELECT f.access_authorized,f.deleted,"
+            "SELECT f.access_authorized,f.deleted,v.state,"
             "(f.revision=v.revision AND f.content_hash=v.source_content_hash) AS current_version,"
             "COALESCE((rights.decision='approve' AND rights.storage_allowed AND rights.embedding_allowed),false) AS rights_approved "
             "FROM im19.document_versions v JOIN im19.source_files f ON f.id=v.source_file_id "
@@ -233,7 +249,9 @@ class PostgresStore:
         ).fetchone()
         if row is None:
             raise PipelineError("FAILED", "DOCUMENT_NOT_FOUND")
-        if row["deleted"] or not row["current_version"]:
+        if row["state"] == "QUARANTINED":
+            raise PipelineError("QUARANTINED", "SOURCE_PURGE_OR_RIGHTS_HOLD")
+        if row["deleted"] or not row["current_version"] or row["state"] == "SUPERSEDED":
             raise PipelineError("SUPERSEDED", "SOURCE_SUPERSEDED")
         if not row["access_authorized"]:
             raise PipelineError("NEEDS_HUMAN_REVIEW", "ACCESS_AUTHORIZATION_REQUIRED")
@@ -589,6 +607,37 @@ class PostgresStore:
                 (status, error_code, retry_seconds, job["id"]),
             )
             self.audit(conn, job["document_id"], "job_" + status, {"code": error_code})
+
+    def execute_approved_source_purge(self, request_id):
+        """Execute one independently approved database purge; never deletes local files."""
+        with self.tx(statement_timeout="15min", lock_timeout="30s") as conn:
+            row = conn.execute(
+                "SELECT im19.execute_approved_source_purge(%s) AS result",
+                (request_id,),
+            ).fetchone()
+            return row["result"]
+
+    def claim_local_purge_targets(self):
+        """Return local blob purge targets assigned to this registered storage-node LOGIN."""
+        with self.tx() as conn:
+            return conn.execute(
+                "SELECT * FROM im19.claim_local_purge_targets()"
+            ).fetchall()
+
+    def record_local_purge_receipt(
+        self, request_id, document_version_id, blob_files_removed, temp_files_removed
+    ):
+        with self.tx() as conn:
+            row = conn.execute(
+                "SELECT im19.record_local_purge_receipt(%s,%s,%s,%s,true) AS status",
+                (
+                    request_id,
+                    document_version_id,
+                    blob_files_removed,
+                    temp_files_removed,
+                ),
+            ).fetchone()
+            return row["status"]
 
     def resume_approved(self):
         with self.tx() as conn:
