@@ -77,6 +77,23 @@ def test_reviewed_list_qrels_are_accepted_as_binary_relevance():
     assert normalize_reviewed_qrels(case) == {"chunk-1": 1, "chunk-2": 1}
 
 
+def test_reviewed_empty_list_qrels_are_rejected():
+    case = {
+        "label_status": "reviewed",
+        "relevant_chunk_ids": [],
+        **human_review_fields(),
+    }
+    with pytest.raises(ValueError, match="at least one relevant chunk"):
+        normalize_reviewed_qrels(case)
+
+
+def test_metrics_reject_invalid_relevance_grades():
+    with pytest.raises(ValueError, match="non-negative integers"):
+        metrics(["chunk-1"], {"chunk-1": True}, 5)
+    with pytest.raises(ValueError, match="non-negative integers"):
+        metrics(["chunk-1"], {"chunk-1": -1}, 5)
+
+
 def test_reviewed_qrels_without_human_evidence_are_rejected():
     with pytest.raises(ValueError, match="human review evidence"):
         normalize_reviewed_qrels(

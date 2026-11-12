@@ -50,7 +50,11 @@ def normalize_reviewed_qrels(case: dict[str, Any]) -> dict[str, int]:
             normalized_id = _normalize_chunk_id(
                 chunk_id, field_name="relevant_chunk_ids list"
             )
+            if normalized_id in qrels:
+                continue
             qrels[normalized_id] = 1
+        if not qrels:
+            raise ValueError("Reviewed qrels must contain at least one relevant chunk")
         return qrels
 
     if not isinstance(raw, dict):
@@ -80,8 +84,12 @@ def validate_eval_cases(cases: Any) -> list[dict[str, Any]]:
         query_id = case.get("query_id")
         query = case.get("query")
         label_status = case.get("label_status")
-        if not isinstance(query_id, str) or not query_id.strip():
-            raise ValueError(f"Evaluation case at index {index} requires query_id")
+        if (
+            not isinstance(query_id, str)
+            or not query_id.strip()
+            or query_id != query_id.strip()
+        ):
+            raise ValueError(f"Evaluation case at index {index} requires a canonical query_id")
         if query_id in seen_query_ids:
             raise ValueError(f"Duplicate evaluation query_id: {query_id}")
         seen_query_ids.add(query_id)
@@ -106,8 +114,19 @@ def metrics(
     """Calculate P@k, Recall@k, MRR@k and graded nDCG@k without duplicate-hit inflation."""
     if type(k) is not int or k < 1:
         raise ValueError("k must be a positive integer")
+    if not isinstance(retrieved_ids, (list, tuple)):
+        raise ValueError("retrieved_ids must be a list of chunk IDs")
     if not isinstance(qrels, dict):
         raise ValueError("qrels must be a mapping")
+
+    normalized_qrels: dict[str, int] = {}
+    for raw_id, grade in qrels.items():
+        chunk_id = _normalize_chunk_id(raw_id, field_name="qrels keys")
+        if chunk_id in normalized_qrels:
+            raise ValueError("qrels contain duplicate normalized chunk IDs")
+        if isinstance(grade, bool) or not isinstance(grade, int) or grade < 0:
+            raise ValueError("qrels grades must be non-negative integers")
+        normalized_qrels[chunk_id] = grade
 
     unique_retrieved: list[str] = []
     seen: set[str] = set()
@@ -118,9 +137,9 @@ def metrics(
             unique_retrieved.append(chunk_id)
 
     top = unique_retrieved[:k]
-    rels = [int(qrels.get(chunk_id, 0)) for chunk_id in top]
+    rels = [normalized_qrels.get(chunk_id, 0) for chunk_id in top]
     hits = sum(1 for relevance in rels if relevance > 0)
-    total_relevant = sum(1 for relevance in qrels.values() if relevance > 0)
+    total_relevant = sum(1 for relevance in normalized_qrels.values() if relevance > 0)
     reciprocal_rank = next(
         (1.0 / rank for rank, relevance in enumerate(rels, start=1) if relevance > 0),
         0.0,
@@ -129,7 +148,7 @@ def metrics(
         (2**relevance - 1) / math.log2(rank + 1)
         for rank, relevance in enumerate(rels, start=1)
     )
-    ideal = sorted((int(value) for value in qrels.values()), reverse=True)[:k]
+    ideal = sorted(normalized_qrels.values(), reverse=True)[:k]
     idcg = sum(
         (2**relevance - 1) / math.log2(rank + 1)
         for rank, relevance in enumerate(ideal, start=1)
@@ -140,7 +159,6 @@ def metrics(
         f"mrr@{k}": reciprocal_rank,
         f"ndcg@{k}": dcg / idcg if idcg else 0.0,
     }
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)

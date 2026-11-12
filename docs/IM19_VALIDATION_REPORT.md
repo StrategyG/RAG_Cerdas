@@ -75,57 +75,51 @@ No before/after performance improvement, readiness score or corpus quality perce
 All six must pass before a production-ready declaration. This branch intentionally provides reviewable code, migrations and evidence boundaries without applying production changes.
 
 
----
+## 12 November 2026 — indexed lexical retrieval implementation
 
-## 5 November 2026 engineering addendum
+The first scale-oriented retrieval change is submitted in [PR #19](https://github.com/StrategyG/RAG_Cerdas/pull/19).
 
-This addendum records subsequent code hardening and a read-only connected Supabase inspection. It does not overwrite the historical test counts above.
+- Commit: `a47fbd9c703a36c67662987a8475d4d06ca8489b`.
+- GitHub Actions: [Institutional RAG checks](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43141774861) — **199 passed in 5.35s**, no failed or skipped tests reported by the run.
+- The disposable PostgreSQL/pgvector test setup applied the additive IM19 GIN lexical-index migration.
+- Migration tests verified the GIN index definition; end-to-end tests exercised the updated lexical/vector/RRF retrieval path and citation behavior.
+- A new unit test verifies that the production retriever does not call the Python BM25 helper, does not count/materialize the full corpus, bounds candidate results, and embeds the query before opening a database transaction.
 
-### Retrieval evaluator changes submitted for review
+### Implementation semantics
 
-- A reviewed case now requires a matching review-evidence envelope: canonical reviewer identifier, `reviewer_type=human`, timezone-aware ISO-8601 review timestamp, and rubric version.
-- Dataset structure and unique query identifiers are checked before the evaluator initializes model/database clients.
-- Reviewed qrels with no positive relevance label are rejected.
-- Retrieved chunk IDs are de-duplicated before ranking metrics, preventing duplicate RPC rows from inflating hit counts.
-- Retrieval reports include the input dataset SHA-256.
-- The second `im19.evaluation.evaluate()` path uses the same envelope structure and rejects empty reviewed gold sets.
-- Regression tests cover duplicate hits, missing/mismatched evidence, malformed timestamps, invalid qrels, and duplicate/empty query cases.
+The production lexical score is PostgreSQL `ts_rank_cd` over the `simple` text-search configuration. It is **not BM25**. The standalone Python `bm25()` function remains only as a small-corpus reference helper for unit tests. Dense retrieval uses the existing pgvector HNSW index; up to 50 lexical and 50 dense candidates are fused using RRF.
 
-The envelope validation is structural, not reviewer authentication. Production still requires server-side reviewer-registry authorization and an immutable audit record bound to dataset/corpus versions. The repository's current evaluation cases remain unlabelled; no corpus-quality score is claimed.
+### Evidence limits
 
-### Connected Supabase read-only inspection
-
-Observed in the connected active project on 5 November 2026:
-
-- PostgreSQL 17.11.0.003; pgvector 0.8.2.
-- 74 applied migration versions.
-- 21 tables in `institutional_rag`, 4 tables in `rag`, and no `im19` schema in the inspected database.
-- The RAG repository's current `supabase/migrations/` directory contains 5 SQL migration files; its checked-in IM19 migration creates an `im19` schema, unlike the schemas observed live.
-- `institutional_rag` tables have RLS enabled. The advisor reports 21 informational no-policy findings, but the inspected schema ACLs and table privileges deny `anon` and `authenticated` access; the intended service-only boundary must be preserved unless changed through an approved access design.
-- The `rag` tables have explicit deny policies for `anon` and `authenticated`, with no inspected schema usage or table SELECT grants to those roles.
-
-The full read-only findings and required migration reconciliation steps are recorded in `docs/SUPABASE_LIVE_SCHEMA_RECONCILIATION_20261105.md`.
-
-### Safety and release decision
-
-No production database DDL, migration, backup, restore, cutover, or deployment was performed. The Supabase migration history must be mapped to repository ownership and commit SHAs before any new production migration. **Production remains BLOCKED** pending reviewer authentication, human-labeled retrieval gold data, live migration reconciliation, backup/restore evidence, staging validation, operational monitoring, and release approval.
-
-The new evaluator branch must pass CI and independent review before merge.
+This CI run proves the stated disposable-database and regression checks only. It does not prove that the GIN index is selected by the planner for every production filter, nor does it provide representative `EXPLAIN (ANALYZE, BUFFERS)`, 100K/500K/1M/5M capacity results, target Supabase/Dropbox/model verification, tenant-aware public authorization, or 24/7 deployment evidence. Production release remains **BLOCKED** until all six gates pass.
 
 
-### Live readiness gate result (2026-11-05)
+### Graph-expansion SQL correction
 
-A read-only query of the connected Supabase readiness views returned **2 of 9 gates passed and 7 failed**. The two passing gates were advisory AI triage volume (528 candidates) and alignment of 293/293 embedding jobs with source/review state. The failed P0/P1 evidence includes:
+A source-schema review found that knowledge_relations.source_id and target_id reference knowledge_nodes, not knowledge_units. The previous graph-expansion query joined relation endpoints directly to knowledge_units, which was incompatible with the declared foreign keys. The query now joins both endpoints through knowledge_nodes and expands only target nodes of type Claim through their matching knowledge_units/source_chunk_ids. A regression test asserts the declared schema path. This is a code/schema compatibility correction; the new CI run is the required validation for this commit.
 
-- 0 approved/published knowledge excerpts.
-- 0 approved embedding model artifacts.
-- 0 completed staging embeddings with a verified model (minimum gate: 30).
-- 0 active verified human reviewer identities (minimum gate: 2).
-- 0 independently curated evaluation cases (minimum gate: 50).
-- 0 independently scored evaluation cases (minimum gate: 50).
-- 0 indexed source documents despite 434 registered documents.
-- 0 embedded chunks despite 1,109 chunks in the system status view.
 
-The live project also reports 34 active evaluation cases and 38 evaluation result rows; these do not satisfy the independent human-curated evaluation gates. These are database-view snapshot counts, not proof of a full object-storage audit or retrieval quality.
+### Exact-head regression validation — 12 November 2026
 
-**Decision remains BLOCKED / NO-GO.** Do not fabricate reviewers, labels, embeddings, indexing state, or approvals. See `docs/SUPABASE_LIVE_SCHEMA_RECONCILIATION_20261105.md` for schema, privilege, migration, and gate details.
+- Commit: \`615713b953a705bac3ab42f4bb1950c69125bb5e\`.
+- [Institutional RAG checks](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43154410922) completed successfully.
+- Unit tests: **200 passed in 6.00 seconds**.
+- The run includes the graph-expansion regression asserting that relation endpoints join through im19.knowledge_nodes and target Claim nodes resolve through im19.knowledge_units.
+- No production database migration, live ingestion, source mutation, cutover, or deployment was performed.
+
+
+### Read-only scale benchmark harness added
+
+A manual benchmark command is now available in scripts/benchmark_im19_retrieval.py, with implementation in im19/benchmark.py and offline unit tests in tests/knowledge/test_benchmark.py.
+
+The harness requires a restricted im19_worker identity, enforces read-only transactions, requires TLS verify-full except for explicitly allowed loopback tests, reports PostgreSQL planner row estimates rather than full COUNT(*) scans, and captures EXPLAIN (ANALYZE, BUFFERS) plus p50/p95 query latency for the lexical and dense candidate paths.
+
+**Not run against staging yet.** No scale, latency, index-selection, relevance, tenant-isolation, or production-capacity result is claimed. The synthetic unit vector is for access-path inspection only, not retrieval quality.
+
+
+### Exact-head benchmark harness CI validation — 12 November 2026
+
+- Code commit: \`a95363c4d2402a6394da5d9f84e0d12688e048f5\`.
+- [Institutional RAG checks](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43155733737) passed **203 tests in 4.79 seconds**.
+- Offline unit tests cover percentile calculation, EXPLAIN plan parsing, and the lexical/vector SQL templates.
+- The benchmark command has **not** been run against a staging database. No measured index-selection, p50/p95, scale, or capacity result is claimed.

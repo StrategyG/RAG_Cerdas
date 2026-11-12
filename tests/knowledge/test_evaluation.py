@@ -58,13 +58,57 @@ def test_reviewed_counts_and_ranking_metrics():
 
 
 def test_empty_reviewed_gold_set_is_rejected():
-    with pytest.raises(ValueError, match="relevant chunk IDs"):
+    with pytest.raises(ValueError, match="at least one relevant chunk"):
         evaluate(
             [
                 {
                     "label_status": "reviewed",
                     "relevant_chunk_ids": [],
                     "retrieved_chunk_ids": [],
+                    **human_review_fields(),
+                }
+            ]
+        )
+
+
+def test_graded_qrels_exclude_zero_relevance_ids():
+    result = evaluate(
+        [
+            {
+                "label_status": "reviewed",
+                "relevant_chunk_ids": {"a": 2, "b": 0},
+                "retrieved_chunk_ids": ["b", "a"],
+                **human_review_fields(),
+            }
+        ]
+    )
+    assert result["metrics"]["recall@5"] == 1
+    assert result["metrics"]["MRR"] == 0.5
+
+
+def test_graded_qrels_with_no_positive_relevance_are_rejected():
+    with pytest.raises(ValueError, match="at least one relevant chunk"):
+        evaluate(
+            [
+                {
+                    "label_status": "reviewed",
+                    "relevant_chunk_ids": {"a": 0},
+                    "retrieved_chunk_ids": ["a"],
+                    **human_review_fields(),
+                }
+            ]
+        )
+
+
+def test_reviewed_counts_must_be_a_mapping():
+    with pytest.raises(ValueError, match="reviewed_counts"):
+        evaluate(
+            [
+                {
+                    "label_status": "reviewed",
+                    "relevant_chunk_ids": ["a"],
+                    "retrieved_chunk_ids": ["a"],
+                    "reviewed_counts": None,
                     **human_review_fields(),
                 }
             ]
