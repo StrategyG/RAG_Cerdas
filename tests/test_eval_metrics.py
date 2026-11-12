@@ -3,8 +3,10 @@ from __future__ import annotations
 import pytest
 
 from eval_retrieval import (
+    evaluation_case_status,
     metrics,
     normalize_reviewed_qrels,
+    summarize_evaluation_coverage,
     validate_eval_cases,
 )
 
@@ -178,3 +180,57 @@ def test_eval_dataset_does_not_treat_existing_unreviewed_labels_as_gold():
         ]
     )
     assert normalize_reviewed_qrels(cases[0]) == {}
+
+
+def test_evaluation_case_status_separates_unreviewed_labels_from_missing_qrels():
+    assert evaluation_case_status(
+        {"label_status": "draft", "relevant_chunk_ids": {"chunk-1": 1}}
+    ) == "labels_not_reviewed"
+    assert evaluation_case_status(
+        {"label_status": "needs_human_review", "relevant_chunk_ids": {}}
+    ) == "needs_human_qrels"
+    assert evaluation_case_status(
+        {
+            "label_status": "reviewed",
+            "relevant_chunk_ids": {"chunk-1": 1},
+            **human_review_fields(),
+        }
+    ) == "scored"
+
+
+def test_evaluation_coverage_reports_review_and_metric_coverage_separately():
+    result = summarize_evaluation_coverage(
+        ["scored", "labels_not_reviewed", "needs_human_qrels"]
+    )
+    assert result["scored_case_count"] == 1
+    assert result["reviewed_case_count"] == 1
+    assert result["unreviewed_case_count"] == 2
+    assert result["labels_not_reviewed_count"] == 1
+    assert result["needs_human_qrels_count"] == 1
+    assert result["review_coverage"] == pytest.approx(1 / 3)
+    assert result["evaluation_coverage"] == pytest.approx(1 / 3)
+    assert result["overall_status"] == "partial_or_unlabeled"
+
+
+def test_evaluation_coverage_blocks_when_no_case_has_reviewed_qrels():
+    result = summarize_evaluation_coverage(
+        ["labels_not_reviewed", "needs_human_qrels", "needs_human_qrels"]
+    )
+    assert result["scored_case_count"] == 0
+    assert result["reviewed_case_count"] == 0
+    assert result["review_coverage"] == 0
+    assert result["evaluation_coverage"] == 0
+    assert result["overall_status"] == "blocked_no_human_reviewed_labels"
+
+
+def test_evaluation_coverage_is_complete_only_when_every_case_is_scored():
+    result = summarize_evaluation_coverage(["scored", "scored"])
+    assert result["review_coverage"] == 1
+    assert result["evaluation_coverage"] == 1
+    assert result["overall_status"] == "scored"
+
+
+def test_evaluation_coverage_rejects_unknown_statuses():
+    with pytest.raises(ValueError, match="statuses are invalid"):
+        summarize_evaluation_coverage(["scored", "unknown"])
+

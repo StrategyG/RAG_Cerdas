@@ -108,6 +108,46 @@ def validate_eval_cases(cases: Any) -> list[dict[str, Any]]:
     return cases
 
 
+def evaluation_case_status(
+    case: dict[str, Any], qrels: dict[str, int] | None = None
+) -> str:
+    """Classify a validated case without treating unreviewed labels as gold."""
+    label_status = str(case.get("label_status", "")).strip().lower()
+    raw_qrels = case.get("relevant_chunk_ids", {})
+    if label_status != "reviewed" and raw_qrels:
+        return "labels_not_reviewed"
+    gold = normalize_reviewed_qrels(case) if qrels is None else qrels
+    return "scored" if gold else "needs_human_qrels"
+
+
+def summarize_evaluation_coverage(statuses: list[str]) -> dict[str, Any]:
+    """Separate human-review coverage from metric-eligible query coverage."""
+    allowed = {"labels_not_reviewed", "needs_human_qrels", "scored"}
+    if not isinstance(statuses, list) or any(status not in allowed for status in statuses):
+        raise ValueError("evaluation case statuses are invalid")
+    total = len(statuses)
+    counts = {status: statuses.count(status) for status in allowed}
+    scored = counts["scored"]
+    reviewed = scored
+    if scored == 0:
+        overall = "blocked_no_human_reviewed_labels"
+    elif scored == total:
+        overall = "scored"
+    else:
+        overall = "partial_or_unlabeled"
+    return {
+        "scored_case_count": scored,
+        "total_case_count": total,
+        "reviewed_case_count": reviewed,
+        "unreviewed_case_count": total - reviewed,
+        "labels_not_reviewed_count": counts["labels_not_reviewed"],
+        "needs_human_qrels_count": counts["needs_human_qrels"],
+        "review_coverage": reviewed / total if total else 0.0,
+        "evaluation_coverage": scored / total if total else 0.0,
+        "overall_status": overall,
+    }
+
+
 def metrics(
     retrieved_ids: list[str], qrels: dict[str, int], k: int
 ) -> dict[str, float]:
@@ -192,6 +232,7 @@ def main() -> int:
         "cases": [],
     }
     rows_for_csv = []
+    case_statuses: list[str] = []
     per_method_metrics: dict[str, list[dict[str, float]]] = {
         "keyword": [],
         "semantic": [],
@@ -202,13 +243,8 @@ def main() -> int:
         query = case["query"]
         gold = normalize_reviewed_qrels(case)
         label_status = case["label_status"]
-        raw_qrels = case.get("relevant_chunk_ids", {})
-        if label_status.strip().lower() != "reviewed" and raw_qrels:
-            case_status = "labels_not_reviewed"
-        elif not gold:
-            case_status = "needs_human_qrels"
-        else:
-            case_status = "scored"
+        case_status = evaluation_case_status(case, gold)
+        case_statuses.append(case_status)
 
         keyword = client.rpc(
             "rag_worker_match_keyword",
@@ -276,16 +312,7 @@ def main() -> int:
             if method_metrics
             else None
         )
-    output["scored_case_count"] = sum(
-        1 for case in output["cases"] if case["status"] == "scored"
-    )
-    output["total_case_count"] = len(cases)
-    if output["scored_case_count"] == 0:
-        output["overall_status"] = "blocked_no_human_reviewed_labels"
-    elif output["scored_case_count"] == len(cases):
-        output["overall_status"] = "scored"
-    else:
-        output["overall_status"] = "partial_or_unlabeled"
+    output.update(summarize_evaluation_coverage(case_statuses))
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -54,7 +54,13 @@ Before evaluation results can authorize release or publication, a trusted server
 
 A fixture reviewer is a test oracle only. It must never be counted as a human corpus evaluation.
 
-## 4. Current benchmark disposition
+## 4. Coverage reporting
+
+The JSON evaluation report separates review coverage from metric-eligible coverage. It records `reviewed_case_count`, `unreviewed_case_count`, `labels_not_reviewed_count`, `needs_human_qrels_count`, `review_coverage`, and `evaluation_coverage` alongside per-case status. Under this contract, a reviewed case must have at least one positive relevance grade, so reviewed cases are metric-eligible; zero-positive reviewed sets remain invalid rather than being silently scored as ordinary retrieval cases.
+
+The overall status remains `blocked_no_human_reviewed_labels` when no case has valid human-reviewed qrels, `partial_or_unlabeled` when only some cases are reviewed, and `scored` only when every case is eligible.
+
+## 5. Current benchmark disposition
 
 The repository's current `eval_cases.json` contains three cases that need human review and has no human relevance labels. It must remain unscored until reviewers inspect the actual source document and retrieved chunks. The expected status is therefore `blocked_no_human_reviewed_labels` when no scored case is present.
 
