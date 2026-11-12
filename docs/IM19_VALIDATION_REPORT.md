@@ -106,3 +106,12 @@ A source-schema review found that knowledge_relations.source_id and target_id re
 - Unit tests: **200 passed in 6.00 seconds**.
 - The run includes the graph-expansion regression asserting that relation endpoints join through im19.knowledge_nodes and target Claim nodes resolve through im19.knowledge_units.
 - No production database migration, live ingestion, source mutation, cutover, or deployment was performed.
+
+
+### Read-only scale benchmark harness added
+
+A manual benchmark command is now available in scripts/benchmark_im19_retrieval.py, with implementation in im19/benchmark.py and offline unit tests in tests/knowledge/test_benchmark.py.
+
+The harness requires a restricted im19_worker identity, enforces read-only transactions, requires TLS verify-full except for explicitly allowed loopback tests, reports PostgreSQL planner row estimates rather than full COUNT(*) scans, and captures EXPLAIN (ANALYZE, BUFFERS) plus p50/p95 query latency for the lexical and dense candidate paths.
+
+**Not run against staging yet.** No scale, latency, index-selection, relevance, tenant-isolation, or production-capacity result is claimed. The synthetic unit vector is for access-path inspection only, not retrieval quality.

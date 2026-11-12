@@ -45,6 +45,8 @@ Report raw candidates, unique candidates, reviewed units, approved units, embedd
 - Keep ingestion, embedding, and indexing bounded and asynchronous so background work does not starve the shared CPU inference runtime.
 - Do not load the full corpus or all embeddings into worker RAM.
 
+The read-only benchmark harness is available at [IM19_BENCHMARK_GUIDE.md](IM19_BENCHMARK_GUIDE.md). It reports planner estimates, GIN/HNSW plan selection, buffer use, and p50/p95 database latency without changing data. It has not yet been run against a representative staging corpus.
+
 ## Validation still required
 
 - Disposable PostgreSQL/pgvector migration and retrieval integration tests.
