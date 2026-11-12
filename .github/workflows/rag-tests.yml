@@ -3,7 +3,7 @@ on:
   push:
     branches: [main, codespaces-institutional-rag, 'p0/**']
   pull_request:
-    branches: [main, codespaces-institutional-rag]
+    branches: [main, codespaces-institutional-rag, 'p0/**']
   workflow_dispatch:
 
 permissions:
