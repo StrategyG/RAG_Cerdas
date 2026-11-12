@@ -9,7 +9,7 @@ on:
 # the separately configured Cataran worker service and must use branch + PR flow.
 permissions:
   actions: read
-    checks: read
+  checks: read
   contents: read
   issues: read
   pull-requests: read
