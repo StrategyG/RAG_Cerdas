@@ -3,6 +3,55 @@
 -- and does not promise immediate erasure from retained backups.
 BEGIN;
 
+-- Revalidate reviewer role privileges at every human decision, not only at registration time.
+CREATE OR REPLACE FUNCTION im19.assert_registered_reviewer()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=''
+AS $
+DECLARE
+  principal_name name := session_user;
+  principal_oid oid;
+  expected_reviewer_id text;
+BEGIN
+  principal_oid := pg_catalog.to_regrole(session_user::text)::oid;
+
+  SELECT i.reviewer_id
+  INTO expected_reviewer_id
+  FROM im19_security.reviewer_identities i
+  JOIN pg_catalog.pg_roles r ON r.oid=i.database_role_oid
+  WHERE i.database_role_oid=principal_oid
+    AND i.database_login_role=principal_name
+    AND r.rolcanlogin AND r.rolinherit
+    AND NOT r.rolsuper AND NOT r.rolbypassrls
+    AND NOT r.rolcreaterole AND NOT r.rolcreatedb AND NOT r.rolreplication
+    AND pg_catalog.pg_has_role(session_user,'im19_approver','MEMBER')
+    AND NOT pg_catalog.pg_has_role(session_user,'im19_worker','MEMBER')
+    AND EXISTS (
+      SELECT 1 FROM pg_catalog.pg_auth_members m
+      WHERE m.member=principal_oid
+        AND m.roleid=pg_catalog.to_regrole('im19_approver')::oid
+        AND NOT m.admin_option
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM im19_security.reviewer_identity_revocations x
+      WHERE x.database_role_oid=i.database_role_oid
+    );
+
+  IF expected_reviewer_id IS NULL THEN
+    RAISE EXCEPTION 'reviewer principal is not registered, active, or least-privileged'
+      USING ERRCODE='42501';
+  END IF;
+  IF NEW.reviewer_id IS DISTINCT FROM expected_reviewer_id THEN
+    RAISE EXCEPTION 'reviewer_id does not match authenticated database principal'
+      USING ERRCODE='42501';
+  END IF;
+  NEW.created_at := pg_catalog.clock_timestamp();
+  RETURN NEW;
+END
+$;
+
 CREATE TABLE im19_security.worker_storage_nodes (
   database_role_oid oid PRIMARY KEY CHECK(database_role_oid > 0),
   database_login_role name NOT NULL UNIQUE,
