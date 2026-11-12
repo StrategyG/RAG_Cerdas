@@ -1,6 +1,6 @@
 # IM19 scalable retrieval implementation note
 
-**Status:** Implemented on a review branch; exact code commit 615713b passed CI (200 tests, 6.00s); representative capacity and target-staging tests pending.
+**Status:** Implemented on a review branch; exact code commit a95363c passed CI (203 tests, 4.79s); the read-only benchmark harness is not yet run against staging.
 
 ## Change
 

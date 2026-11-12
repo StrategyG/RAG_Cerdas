@@ -115,3 +115,11 @@ A manual benchmark command is now available in scripts/benchmark_im19_retrieval.
 The harness requires a restricted im19_worker identity, enforces read-only transactions, requires TLS verify-full except for explicitly allowed loopback tests, reports PostgreSQL planner row estimates rather than full COUNT(*) scans, and captures EXPLAIN (ANALYZE, BUFFERS) plus p50/p95 query latency for the lexical and dense candidate paths.
 
 **Not run against staging yet.** No scale, latency, index-selection, relevance, tenant-isolation, or production-capacity result is claimed. The synthetic unit vector is for access-path inspection only, not retrieval quality.
+
+
+### Exact-head benchmark harness CI validation — 12 November 2026
+
+- Code commit: \`a95363c4d2402a6394da5d9f84e0d12688e048f5\`.
+- [Institutional RAG checks](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43155733737) passed **203 tests in 4.79 seconds**.
+- Offline unit tests cover percentile calculation, EXPLAIN plan parsing, and the lexical/vector SQL templates.
+- The benchmark command has **not** been run against a staging database. No measured index-selection, p50/p95, scale, or capacity result is claimed.
