@@ -39,12 +39,15 @@ class PostgresStore:
     def check_role(self):
         with self.tx() as conn:
             row = conn.execute(
-                "SELECT r.rolsuper,r.rolbypassrls,"
+                "SELECT r.rolsuper,r.rolbypassrls,r.rolcreaterole,r.rolcreatedb,"
+                "r.rolreplication,r.rolinherit,r.rolcanlogin,"
                 "pg_has_role(session_user,'im19_approver','member') AS approver,"
                 "pg_has_role(session_user,'im19_worker','member') AS worker,"
+                "EXISTS(SELECT 1 FROM pg_catalog.pg_auth_members m "
+                "WHERE m.member=r.oid AND m.roleid=pg_catalog.to_regrole('im19_worker')::oid "
+                "AND NOT m.admin_option) AS direct_worker_member,"
                 "EXISTS(SELECT 1 FROM im19_security.worker_storage_nodes n "
-                "WHERE n.database_role_oid=pg_catalog.to_regrole(session_user::text)::oid "
-                "AND n.database_login_role=session_user "
+                "WHERE n.database_role_oid=r.oid AND n.database_login_role=session_user "
                 "AND NOT EXISTS(SELECT 1 FROM im19_security.worker_storage_node_revocations x "
                 "WHERE x.database_role_oid=n.database_role_oid)) AS storage_node_registered "
                 "FROM pg_catalog.pg_roles r WHERE r.rolname=session_user"
@@ -53,8 +56,14 @@ class PostgresStore:
                 row is None
                 or row["rolsuper"]
                 or row["rolbypassrls"]
+                or row["rolcreaterole"]
+                or row["rolcreatedb"]
+                or row["rolreplication"]
+                or not row["rolinherit"]
+                or not row["rolcanlogin"]
                 or row["approver"]
                 or not row["worker"]
+                or not row["direct_worker_member"]
                 or not row["storage_node_registered"]
             ):
                 raise PipelineError("AUTH_BLOCKED", "OVERPRIVILEGED_OR_UNREGISTERED_WORKER_LOGIN")
