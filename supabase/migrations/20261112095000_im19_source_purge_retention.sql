@@ -9,7 +9,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path=''
-AS $
+AS $reviewer$
 DECLARE
   principal_name name := session_user;
   principal_oid oid;
@@ -50,7 +50,7 @@ BEGIN
   NEW.created_at := pg_catalog.clock_timestamp();
   RETURN NEW;
 END
-$;
+$reviewer$;
 
 CREATE TABLE im19_security.worker_storage_nodes (
   database_role_oid oid PRIMARY KEY CHECK(database_role_oid > 0),
@@ -301,13 +301,15 @@ RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path=''
-AS $
+AS $storage$
 DECLARE node record;
 BEGIN
   SELECT * INTO node FROM im19_security.current_storage_node();
   RETURN true;
+EXCEPTION WHEN insufficient_privilege THEN
+  RETURN false;
 END
-$;
+$storage$;
 
 CREATE FUNCTION im19_security.purge_inventory(p_document_version_id uuid)
 RETURNS jsonb LANGUAGE sql SECURITY DEFINER SET search_path='' AS $$
