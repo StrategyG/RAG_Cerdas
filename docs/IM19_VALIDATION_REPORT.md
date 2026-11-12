@@ -97,3 +97,12 @@ This CI run proves the stated disposable-database and regression checks only. It
 ### Graph-expansion SQL correction
 
 A source-schema review found that knowledge_relations.source_id and target_id reference knowledge_nodes, not knowledge_units. The previous graph-expansion query joined relation endpoints directly to knowledge_units, which was incompatible with the declared foreign keys. The query now joins both endpoints through knowledge_nodes and expands only target nodes of type Claim through their matching knowledge_units/source_chunk_ids. A regression test asserts the declared schema path. This is a code/schema compatibility correction; the new CI run is the required validation for this commit.
+
+
+### Exact-head regression validation — 12 November 2026
+
+- Commit: \`615713b953a705bac3ab42f4bb1950c69125bb5e\`.
+- [Institutional RAG checks](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43154410922) completed successfully.
+- Unit tests: **200 passed in 6.00 seconds**.
+- The run includes the graph-expansion regression asserting that relation endpoints join through im19.knowledge_nodes and target Claim nodes resolve through im19.knowledge_units.
+- No production database migration, live ingestion, source mutation, cutover, or deployment was performed.
