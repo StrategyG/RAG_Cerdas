@@ -4,8 +4,8 @@ This repository pins the common event envelope only from UGAI's proposed Platfor
 
 - Upstream: StrategyG/Universal-Generative-AI PR #34 (open, not merged; proposal not released)
 - Upstream commit: `a4b3311f752699db7c411989bcdc7025431d38fd`
-- Schema Git blob SHA-1: `5940df93b20712127123a351cb6fdc94649682ee`
-- Fixture Git blob SHA-1: `75f2b6e6a91536226e3e4f81c4a3dc382501e9e1`
+- Schema Git blob SHA-1: `02e8dca953eed529abbfbde2873c2d7f5a705011`
+- Fixture Git blob SHA-1: `4cbe6f8f6f090356e9bbae55e7800cbab82497fd`
 - Validator: `jsonschema==4.26.0`
 
 CI validates schema syntax, the golden fixture, invalid identifiers/versions, nested credential-like property-key rejection and trace context.
