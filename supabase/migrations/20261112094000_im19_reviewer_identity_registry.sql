@@ -63,10 +63,14 @@ BEGIN
     RAISE EXCEPTION 'reviewer identity requires a least-privileged LOGIN role';
   END IF;
 
-  IF NOT pg_catalog.pg_has_role(
-    NEW.database_login_role, 'im19_approver', 'MEMBER'
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_auth_members membership
+    WHERE membership.member=NEW.database_role_oid
+      AND membership.roleid=pg_catalog.to_regrole('im19_approver')::oid
+      AND NOT membership.admin_option
   ) THEN
-    RAISE EXCEPTION 'reviewer LOGIN must inherit im19_approver';
+    RAISE EXCEPTION 'reviewer LOGIN must be a direct im19_approver member without admin option';
   END IF;
 
   IF pg_catalog.pg_has_role(
@@ -82,16 +86,6 @@ BEGIN
   PERFORM pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtextextended(NEW.reviewer_id, 0)
   );
-
-  IF EXISTS (
-    SELECT 1
-    FROM pg_catalog.pg_auth_members membership
-    WHERE membership.member=NEW.database_role_oid
-      AND membership.roleid=pg_catalog.to_regrole('im19_approver')::oid
-      AND membership.admin_option
-  ) THEN
-    RAISE EXCEPTION 'reviewer LOGIN must not have admin option on im19_approver';
-  END IF;
 
   IF EXISTS (
     SELECT 1
