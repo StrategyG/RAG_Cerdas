@@ -1,6 +1,6 @@
 # ADR-0002 — RAG_Cerdas Alignment with the RusaAi Canonical Knowledge Store
 
-- **Status:** Adopted for architecture/documentation alignment; production activation remains NOT APPROVED
+- **Status:** Proposed in PR #28 for architecture/documentation alignment; source decision remains accepted in RusaAi ADR-0002; production activation remains NOT APPROVED
 - **Date:** 2026-11-13
 - **Decision authority:** RusaAi project-owner decision recorded in RusaAi ADR-0002
 - **Scope:** RAG_Cerdas / IM19 ownership boundary within the RUSA AI ecosystem
