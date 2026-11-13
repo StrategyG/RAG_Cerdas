@@ -5,7 +5,7 @@
 - **Decision authority:** RusaAi project-owner decision recorded in RusaAi ADR-0002
 - **Scope:** RAG_Cerdas / IM19 ownership boundary within the RUSA AI ecosystem
 - **Source decision:** [StrategyG/RusaAi ADR-0002](https://github.com/StrategyG/RusaAi/blob/main/docs/adr/ADR-0002-canonical-shared-agent-worker-knowledge-store.md)
-- **Source main commit verified during alignment:** `1ead461e76d563445d179e7d5e80c25a9ca9f059`
+- **Source main commit verified during alignment:** `1adac8d340e5870570910168b6626fe285dd2cf2`
 
 ## 1. Context
 
