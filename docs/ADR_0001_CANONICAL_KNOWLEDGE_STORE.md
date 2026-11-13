@@ -1,9 +1,11 @@
 # ADR-0001 — Canonical RUSA AI knowledge store and RAG integration
 
-- **Status:** Proposed — no canonical-store decision approved
+- **Status:** Superseded for ecosystem-level canonical-store selection by ADR-0002 (2026-11-13)
 - **Date:** 2026-11-12
 - **Decision owners:** RUSA AI architecture, security, data governance, and operations
-- **Related:** RUSA AI Agent & Worker 5M Hybrid Corpus Expansion Plan v1.0; RusaAi Architecture v2.0; RAG_Cerdas IM19 Production Roadmap v1.1
+- **Related:** RUSA AI Agent & Worker 5M Hybrid Corpus Expansion Plan v1.0; RusaAi Architecture v2.0; RAG_Cerdas IM19 Production Roadmap v1.2; ADR-0002
+
+> **Supersession notice (2026-11-13):** This ADR remains as the historical comparison of candidate stores and their security/data-lifecycle properties. The ecosystem-level canonical-store decision is recorded in [ADR-0002](ADR_0002_RUSAAI_CANONICAL_KNOWLEDGE_STORE_ALIGNMENT.md), which aligns this repository with the accepted RusaAi [ADR-0002](https://github.com/StrategyG/RusaAi/blob/main/docs/adr/ADR-0002-canonical-shared-agent-worker-knowledge-store.md). This supersession does not authorize production activation, migration, cross-system reads/writes, or data movement.
 
 ## 1. Context
 
