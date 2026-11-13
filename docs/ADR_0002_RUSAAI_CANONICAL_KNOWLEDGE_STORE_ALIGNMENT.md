@@ -25,7 +25,7 @@ The ecosystem has three distinct ownership domains:
 2. RAG_Cerdas / IM19 remains an isolated Knowledge Intelligence pilot and is not the canonical production writer or answer-facing retrieval backend under the current decision.
 3. IM19 must not perform cross-read, cross-write, dual-write, mirroring, bulk synchronization, or bulk copying with RusaAi `rusa_knowledge`.
 4. IM19 must not be exposed as a public or multi-tenant production retrieval API under this ADR.
-5. RusaModels remains the Model Plane. Any model or embedding use by RusaAi or an approved IM19 pilot must use an authenticated, versioned service contract; repositories must not access one another's private databases, artifact credentials, or internal filesystem paths.
+5. RusaModels is the only production Model Plane. RusaAi uses its authenticated Model Server API. IM19's existing `local_model.py` GGUF/CPU adapter is a pilot-local experimental runtime only; it is not a second production Model Plane and has no access to RusaModels private artifacts, credentials, databases, or runtime ports. Whether future IM19 pilot inference remains local or uses RusaModels through a separately approved authenticated, versioned service contract is an OPEN_DECISION. Repositories must not access one another's private databases, artifact credentials, or internal filesystem paths.
 6. SQLite/FTS5 remains device-local state and local full-text retrieval. It is not a second writer or replica of the canonical shared corpus.
 7. This ADR records architecture/documentation alignment only. It does not authorize production migration, DDL, ingestion, embedding, source mutation, data transfer, API exposure, deployment, or production activation.
 
@@ -34,6 +34,7 @@ The ecosystem has three distinct ownership domains:
 Until a separately approved integration decision exists:
 
 - Keep IM19 data stores and workers isolated from the RusaAi canonical store.
+- Keep the current GGUF/CPU adapter in `local_model.py` confined to the IM19 pilot; it is not a shared or production model service. Do not fetch RusaModels artifacts or call private RusaModels runtime ports from IM19. A future move to the RusaModels API requires a separate approved contract and security review.
 - Continue only approved pilot work using authorized sources and controlled test/staging data.
 - Preserve exact source revision, content hash, provenance, rights state, reviewer evidence, and audit history.
 - Keep source discovery, candidate, reviewed, approved, embedded, indexed, and published counts distinct.
@@ -66,6 +67,8 @@ Any future IM19-to-RusaAi integration requires a new or explicitly superseding a
 ## 6. Explicit non-decisions
 
 This ADR does not:
+
+- Decide whether IM19's pilot-local GGUF/CPU runtime remains in place or is replaced by an authenticated RusaModels Model Server integration.
 
 - Approve a specific embedding model, vector dimension, or production model artifact.
 - Approve migration or transfer of IM19 data into RusaAi.
