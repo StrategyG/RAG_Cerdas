@@ -3,6 +3,15 @@
 ## Mission
 Act as a cautious autonomous engineering agent for this Institutional RAG repository. Audit current state first, fix root causes, run tests, and report evidence. Do not stop at recommendations when safe repository changes can be made.
 
+## Parent RUSA AI architecture and IM19 boundary
+
+- The accepted parent-ecosystem decision is recorded in [RusaAi ADR-0002](https://github.com/StrategyG/RusaAi/blob/main/docs/adr/ADR-0002-canonical-shared-agent-worker-knowledge-store.md): RusaAi `rusa_knowledge` is the canonical shared Agent/Worker knowledge store for implementation planning. Production activation is not authorized by that decision.
+- RAG_Cerdas ADR-0002 records this repository's alignment. ADR-0001 is historical option analysis and is superseded for ecosystem-level canonical-store selection.
+- IM19 remains an isolated Knowledge Intelligence pilot. Do not add cross-read, cross-write, dual-write, mirroring, bulk synchronization, bulk copy, production migration, or public multi-tenant API behavior without a separately approved ADR and explicit authorization.
+- RusaAi owns the Control Plane and canonical shared knowledge store. RusaModels owns the Model Plane. IM19 owns its isolated pilot workflows.
+- Any future integration requires an authenticated versioned contract, trusted tenant/project identity, database-enforced authorization, rights/provenance mapping, deletion/reconciliation semantics, security review, evaluation evidence, and rollback plan.
+- Never interpret canonical-store selection as permission to migrate data, run production DDL, ingest sources, embed content, or activate production retrieval.
+
 ## Repository-wide engineering loop
 1. Observe current branch, commit, diff, open PRs, workflows, and relevant logs.
 2. Reproduce the problem safely and distinguish code defects from missing credentials, permissions, external services, or test data.
