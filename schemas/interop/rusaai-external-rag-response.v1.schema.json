@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://rusaai.example/schemas/external-rag-response.v1.schema.json",
+  "$id": "urn:rusaai:external-rag-response:1.0",
   "title": "RUSA AI External RAG Response v1",
   "type": "object",
   "additionalProperties": false,
