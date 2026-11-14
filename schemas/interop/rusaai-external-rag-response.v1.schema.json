@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rusaai.example/schemas/external-rag-response.v1.schema.json",
+  "title": "RUSA AI External RAG Response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "results"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "results": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text", "source"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "text": { "type": "string", "minLength": 1, "maxLength": 20000 },
+          "score": { "type": "number", "minimum": 0, "maximum": 1 },
+          "metadata": { "type": "object" },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["uri", "title", "revision", "content_sha256", "locator"],
+            "properties": {
+              "uri": { "type": "string", "format": "uri", "pattern": "^https://" },
+              "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+              "revision": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "locator": { "type": "string", "minLength": 1, "maxLength": 1000 }
+            }
+          }
+        }
+      }
+    }
+  }
+}
