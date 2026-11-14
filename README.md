@@ -29,3 +29,8 @@ python -m im19.cli pilot --document-id ONE_STAGING_DOCUMENT_UUID
 ```
 
 Use secret-manager mounts or Colab Secrets; never put tokens into source or notebook cells. `notebooks/IM19_Knowledge_Intelligence_Pilot.ipynb` is an unexecuted pilot notebook. `deploy/compose.knowledge.yml` is a reviewable deployment example, not a deployed service. No migration is automatically applied; no original Dropbox document is modified. Colab runs only while its runtime remains active.
+
+
+## External RAG interoperability boundary
+
+See [External RAG Interoperability Boundary v1.0](docs/EXTERNAL_RAG_INTEROPERABILITY_BOUNDARY_v1.0.md) and the normalized [RUSA AI evidence response schema](schemas/interop/rusaai-external-rag-response.v1.schema.json). These are contract fixtures only. They do not expose IM19 as a public retrieval service, authorize RusaAi-to-IM19 access, or change the existing isolated-pilot and canonical-store boundaries.
