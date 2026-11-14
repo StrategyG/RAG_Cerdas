@@ -98,10 +98,16 @@ sequenceDiagram
 Rules:
 
 - The tenant identity is resolved by RusaAi from a verified credential and propagated through trusted task context. Model-generated values cannot select tenant, project, agent, or worker permissions.
-- RusaAi calls the RusaModels Model Server over HTTPS using a dedicated principal with role `inference`. The worker must not receive the Model Server credential, database credentials, artifact-store credentials, or private runtime URL.
+- For chat completion, RusaAi calls the RusaModels Model Server over HTTPS using a dedicated principal with role `inference`. The intended worker chat path uses tenant-scoped RusaAi gateway credentials; workers must not receive Model Server database credentials, artifact-store credentials, or private runtime URLs.
 - RusaModels owns its PostgreSQL registry and S3-compatible artifact store. RusaAi consumes APIs; it does not connect directly to those stores.
 - RusaAi's canonical knowledge store remains subject to source-rights, project/agent scope, human approval, publication, index-generation, deletion, restore, and retrieval-quality gates.
 - A passing CI workflow or a documented endpoint is not proof of a live production deployment.
+
+### Current implementation qualification — optional embedding path
+
+The chat-completion gateway is not yet a gateway for all embedding traffic. RusaAi main conditionally constructs `KnowledgeService` inside the Worker when `RUSA_RAG_ENABLED=true`. Its current `OpenAICompatibleEmbeddingProvider` resolves `RUSA_EMBEDDING_BASE_URL` or `RUSA_MODEL_BASE_URL`, uses `RUSA_EMBEDDING_API_KEY` or the `RUSA_MODEL_API_KEY` fallback, and posts directly to the Model Server `/embeddings` endpoint. RusaModels protects `/openai/v1/embeddings` with `inference`, `manager`, or `administrator` roles. This optional worker path therefore bypasses the RusaAi chat gateway and requires a Model Server API credential in the worker environment.
+
+The audited CPU Compose profile does not enable `RUSA_RAG_ENABLED`, and the worker runtime defaults it to `false`. RusaAi's operations guide documents the optional direct path, but it is not an approved production gateway path. Keep worker RAG disabled in production until a tenant-aware RusaAi embedding gateway or equivalently reviewed brokered contract is implemented and verified. Do not distribute Model Server API credentials to production workers.
 
 ## 5. Isolated IM19 pilot data flow
 
@@ -129,7 +135,7 @@ flowchart TD
 
 | Contract / interface | Provider → consumer | Current evidence | Status and limits |
 |---|---|---|---|
-| OpenAI-compatible Model Server API: `GET /openai/v1/models`, `POST /openai/v1/chat/completions`, `POST /openai/v1/embeddings` (streaming/completions are also documented) | RusaModels → RusaAi | RusaAi `docs/RUSAMODELS-INTEGRATION.md`; RusaModels `docs/RUSAAI-INTEGRATION.md`; RusaModels Model Server implementation and authenticated `inference` principal | **Implemented/documented API surface; live deployment NOT_VERIFIED.** This is the currently documented integration surface. |
+| OpenAI-compatible Model Server API: `GET /openai/v1/models`, `POST /openai/v1/chat/completions`, `POST /openai/v1/embeddings` (streaming/completions are also documented) | RusaModels → RusaAi | RusaAi `docs/RUSAMODELS-INTEGRATION.md`; RusaModels `docs/RUSAAI-INTEGRATION.md`; RusaModels Model Server implementation and authenticated `inference` principal | **Implemented/documented API surface; live deployment NOT_VERIFIED.** The optional RusaAi KnowledgeService worker embedding client currently calls `/openai/v1/embeddings` directly; this bypass is not approved for production and must be brokered through a tenant-aware gateway before worker RAG activation. |
 | RusaAi v1 inference request/response JSON Schemas in `shared/contracts/inference_contract/` | RusaAi-owned envelope; intended for RusaAi inference boundary | Schema files exist on RusaAi main; its contract README says the existing OpenAI-compatible `/v1/chat/completions` endpoint has not yet been migrated to consume these envelopes directly | **Schema present; endpoint consumption NOT_IMPLEMENTED.** Do not claim provider/consumer conformance. |
 | RusaAi ↔ RusaModels Model Plane custom v0.1 contract proposed in RusaAi PR #103 | Intended RusaAi consumer ↔ RusaModels provider | PR #103 is an open draft on RusaAi; it describes proposed OpenAPI/request/response/error schemas | **DRAFT / NOT_MERGED / provider conformance NOT_VERIFIED.** It is not a replacement for the current OpenAI-compatible API until both sides implement and test it. |
 | RusaAi ↔ RAG_Cerdas / IM19 retrieval, ingestion, or data synchronization | None | No approved cross-repository service contract identified; RusaAi ADR-0002 and RAG_Cerdas alignment ADR prohibit implicit integration | **NO CONTRACT / NOT_AUTHORIZED.** Any future path requires a separate approved ADR, authenticated versioned contract, tenant/project scope, rights/provenance, deletion/reconciliation, security and evaluation evidence, and rollback. |
