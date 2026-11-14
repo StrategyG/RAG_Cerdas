@@ -85,12 +85,12 @@ sequenceDiagram
   A->>W: Queue authorized task with tenant scope
   W->>K: Tenant-scoped knowledge operation (RLS)
   K-->>W: Authorized evidence + provenance
-  W->>G: Inference request
+  W->>G: Chat-completion request
   G->>M: HTTPS + dedicated inference bearer
-  M->>R: Private runtime request
-  R-->>M: Model output
-  M-->>G: OpenAI-compatible response
-  G-->>W: Bounded inference result
+  M->>R: Private generation runtime
+  R-->>M: Generated chat output
+  M-->>G: OpenAI-compatible chat response
+  G-->>W: Bounded chat result
   W->>A: Result + audit/evidence
   A-->>T: Tenant-authorized response
 ```
