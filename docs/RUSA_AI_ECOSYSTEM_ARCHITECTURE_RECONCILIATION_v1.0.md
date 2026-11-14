@@ -4,7 +4,7 @@
 - **Scope:** StrategyG/RusaAi, StrategyG/RusaModels, StrategyG/RAG_Cerdas
 - **Primary authority:** RusaAi ADR-0002 — Canonical Shared Agent/Worker Knowledge Store
 - **Companion alignment:** RAG_Cerdas ADR-0002 (proposed in PR #28)
-- **Parent architecture reference:** [RusaAi ecosystem architecture reconciliation (PR #117)](https://github.com/StrategyG/RusaAi/pull/117), open and ready for review but not merged; this RAG_Cerdas document is the IM19 alignment summary, not a competing architecture authority.
+- **Parent architecture authority:** RusaAi's `docs/architecture/ECOSYSTEM_ARCHITECTURE_RECONCILIATION_v1.0.md`; see [PR #117](https://github.com/StrategyG/RusaAi/pull/117) for the cross-repository review record. This RAG_Cerdas document is the IM19 alignment summary, not a competing architecture authority.
 - **Last repository snapshot:** 2026-11-14
 - **Production status:** NO-GO; no production activation is authorized by this document
 
