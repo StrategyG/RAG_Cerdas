@@ -6,7 +6,7 @@ Act as a cautious autonomous engineering agent for this Institutional RAG reposi
 ## Parent RUSA AI architecture and IM19 boundary
 
 - The accepted parent-ecosystem decision is recorded in RusaAi's [Canonical Shared Agent/Worker Knowledge Store ADR](https://github.com/StrategyG/RusaAi/blob/main/docs/adr/ADR-0002-canonical-shared-agent-worker-knowledge-store.md): RusaAi `rusa_knowledge` is the canonical shared Agent/Worker knowledge store for implementation planning. Production activation is not authorized by that decision.
-- RAG_Cerdas ADR-0002 records this repository's alignment. ADR-0001 is historical option analysis and is superseded for ecosystem-level canonical-store selection.
+- The RAG_Cerdas “Alignment with the RusaAi Canonical Knowledge Store” ADR (`docs/ADR_0002_RUSAAI_CANONICAL_KNOWLEDGE_STORE_ALIGNMENT.md`) records this repository's alignment. The “Canonical RUSA AI knowledge store and RAG integration” ADR-0001 is historical option analysis and is superseded for ecosystem-level canonical-store selection.
 - IM19 remains an isolated Knowledge Intelligence pilot. Do not add cross-read, cross-write, dual-write, mirroring, bulk synchronization, bulk copy, production migration, or public multi-tenant API behavior without a separately approved ADR and explicit authorization.
 - RusaAi owns the Control Plane and canonical shared knowledge store. RusaModels owns the Model Plane. IM19 owns its isolated pilot workflows.
 - Any future integration requires an authenticated versioned contract, trusted tenant/project identity, database-enforced authorization, rights/provenance mapping, deletion/reconciliation semantics, security review, evaluation evidence, and rollback plan.
