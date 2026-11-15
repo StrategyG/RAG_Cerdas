@@ -6,7 +6,7 @@
 - Updated: 2026-11-13
 - Status: Engineering roadmap; production remains BLOCKED
 
-> RAG_Cerdas / IM19 is an isolated Knowledge Intelligence pilot for source discovery, rights assessment, document processing, knowledge mining, review, provenance, and retrieval experimentation. The accepted parent-ecosystem decision in RusaAi's “Canonical Shared Agent/Worker Knowledge Store” ADR selects RusaAi `rusa_knowledge` as the canonical shared Agent/Worker knowledge store for implementation planning; production activation is not authorized. IM19 is not the canonical production writer or answer-facing retrieval backend. See [ADR-0002](ADR_0002_RUSAAI_CANONICAL_KNOWLEDGE_STORE_ALIGNMENT.md). No cross-read, cross-write, dual-write, mirroring, bulk synchronization, or public multi-tenant IM19 API is authorized.
+> RAG_Cerdas / IM19 is an isolated Knowledge Intelligence pilot for source discovery, rights assessment, document processing, knowledge mining, review, provenance, and retrieval experimentation. The accepted parent-ecosystem decision in RusaAi's “Canonical Shared Agent/Worker Knowledge Store” ADR selects RusaAi `rusa_knowledge` as the canonical shared Agent/Worker knowledge store for implementation planning; production activation is not authorized. IM19 is not the canonical production writer or answer-facing retrieval backend. See the [RAG_Cerdas Alignment with the RusaAi Canonical Knowledge Store ADR](ADR_0002_RUSAAI_CANONICAL_KNOWLEDGE_STORE_ALIGNMENT.md). No cross-read, cross-write, dual-write, mirroring, bulk synchronization, or public multi-tenant IM19 API is authorized.
 
 ## 1. Program targets — keep counts distinct
 
