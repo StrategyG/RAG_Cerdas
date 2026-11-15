@@ -1,15 +1,15 @@
 # ADR-0002 — RAG_Cerdas Alignment with the RusaAi Canonical Knowledge Store
 
-- **Status:** Proposed in PR #28 for architecture/documentation alignment; source decision remains accepted in RusaAi ADR-0002; production activation remains NOT APPROVED
+- **Status:** Proposed in PR #28 for architecture/documentation alignment; source decision remains accepted in RusaAi's “Canonical Shared Agent/Worker Knowledge Store” ADR; production activation remains NOT APPROVED
 - **Date:** 2026-11-13
-- **Decision authority:** RusaAi project-owner decision recorded in RusaAi ADR-0002
+- **Decision authority:** RusaAi project-owner decision recorded in the “Canonical Shared Agent/Worker Knowledge Store” ADR
 - **Scope:** RAG_Cerdas / IM19 ownership boundary within the RUSA AI ecosystem
-- **Source decision:** [StrategyG/RusaAi ADR-0002](https://github.com/StrategyG/RusaAi/blob/main/docs/adr/ADR-0002-canonical-shared-agent-worker-knowledge-store.md)
+- **Source decision:** [RusaAi — Canonical Shared Agent/Worker Knowledge Store ADR](https://github.com/StrategyG/RusaAi/blob/main/docs/adr/ADR-0002-canonical-shared-agent-worker-knowledge-store.md)
 - **Source main commit verified during alignment:** `1adac8d340e5870570910168b6626fe285dd2cf2`
 
 ## 1. Context
 
-RusaAi ADR-0002 is marked accepted by the project owner for implementation planning. It selects RusaAi PostgreSQL/pgvector `rusa_knowledge` as the canonical shared Agent/Worker knowledge store. That decision explicitly does not authorize production activation.
+RusaAi's “Canonical Shared Agent/Worker Knowledge Store” ADR is marked accepted by the project owner for implementation planning. It selects RusaAi PostgreSQL/pgvector `rusa_knowledge` as the canonical shared Agent/Worker knowledge store. That decision explicitly does not authorize production activation.
 
 RAG_Cerdas ADR-0001 was written as a proposed decision and stated that no canonical shared store had been selected. That statement is now stale relative to the accepted parent-ecosystem decision. This ADR records the resulting repository alignment without changing the IM19 runtime or authorizing production data operations.
 

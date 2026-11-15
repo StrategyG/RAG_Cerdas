@@ -2,8 +2,8 @@
 
 - **Status:** Architecture/documentation alignment; not a production approval
 - **Scope:** StrategyG/RusaAi, StrategyG/RusaModels, StrategyG/RAG_Cerdas
-- **Primary authority:** RusaAi ADR-0002 — Canonical Shared Agent/Worker Knowledge Store
-- **Companion alignment:** RAG_Cerdas ADR-0002 (proposed in PR #28)
+- **Primary authority:** RusaAi — [Canonical Shared Agent/Worker Knowledge Store ADR](https://github.com/StrategyG/RusaAi/blob/main/docs/adr/ADR-0002-canonical-shared-agent-worker-knowledge-store.md)
+- **Companion alignment:** RAG_Cerdas — [Alignment with the RusaAi Canonical Knowledge Store ADR](ADR_0002_RUSAAI_CANONICAL_KNOWLEDGE_STORE_ALIGNMENT.md) (proposed in PR #28)
 - **Parent architecture authority:** RusaAi's `docs/architecture/ECOSYSTEM_ARCHITECTURE_RECONCILIATION_v1.0.md`; see [PR #117](https://github.com/StrategyG/RusaAi/pull/117) for the cross-repository review record. This RAG_Cerdas document is the IM19 alignment summary, not a competing architecture authority.
 - **Last repository snapshot:** 2026-11-14
 - **Production status:** NO-GO; no production activation is authorized by this document
@@ -18,7 +18,7 @@ The ecosystem has three distinct ownership domains:
 
 SQLite/FTS5 remains device-local state and local full-text retrieval. It is not a second writer, replica, or synchronization target for the shared corpus.
 
-RusaAi ADR-0002 selects `rusa_knowledge` for implementation planning. It does **not** establish that the store is fully governed, populated, deployed, or approved for production answer-facing retrieval. Production activation remains NO-GO until the stated release gates pass.
+RusaAi's “Canonical Shared Agent/Worker Knowledge Store” ADR selects `rusa_knowledge` for implementation planning. It does **not** establish that the store is fully governed, populated, deployed, or approved for production answer-facing retrieval. Production activation remains NO-GO until the stated release gates pass.
 
 ## 2. System context
 
@@ -138,7 +138,7 @@ flowchart TD
 | OpenAI-compatible Model Server API: `GET /openai/v1/models`, `POST /openai/v1/chat/completions`, `POST /openai/v1/embeddings` (streaming/completions are also documented) | RusaModels → RusaAi | RusaAi `docs/RUSAMODELS-INTEGRATION.md`; RusaModels `docs/RUSAAI-INTEGRATION.md`; RusaModels Model Server implementation and authenticated `inference` principal | **Implemented/documented API surface; live deployment NOT_VERIFIED.** The optional RusaAi KnowledgeService worker embedding client currently calls `/openai/v1/embeddings` directly; this bypass is not approved for production and must be brokered through a tenant-aware gateway before worker RAG activation. |
 | RusaAi v1 inference request/response JSON Schemas in `shared/contracts/inference_contract/` | RusaAi-owned envelope; intended for RusaAi inference boundary | Schema files exist on RusaAi main; its contract README says the existing OpenAI-compatible `/v1/chat/completions` endpoint has not yet been migrated to consume these envelopes directly | **Schema present; endpoint consumption NOT_IMPLEMENTED.** Do not claim provider/consumer conformance. |
 | RusaAi ↔ RusaModels Model Plane custom v0.1 contract proposed in RusaAi PR #103 | Intended RusaAi consumer ↔ RusaModels provider | PR #103 is an open draft on RusaAi; it describes proposed OpenAPI/request/response/error schemas | **DRAFT / NOT_MERGED / provider conformance NOT_VERIFIED.** It is not a replacement for the current OpenAI-compatible API until both sides implement and test it. |
-| RusaAi ↔ RAG_Cerdas / IM19 retrieval, ingestion, or data synchronization | None | No approved cross-repository service contract identified; RusaAi ADR-0002 and RAG_Cerdas alignment ADR prohibit implicit integration | **NO CONTRACT / NOT_AUTHORIZED.** Any future path requires a separate approved ADR, authenticated versioned contract, tenant/project scope, rights/provenance, deletion/reconciliation, security and evaluation evidence, and rollback. |
+| RusaAi ↔ RAG_Cerdas / IM19 retrieval, ingestion, or data synchronization | None | No approved cross-repository service contract identified; RusaAi's “Canonical Shared Agent/Worker Knowledge Store” ADR and this repository's “Alignment with the RusaAi Canonical Knowledge Store” ADR prohibit implicit integration | **NO CONTRACT / NOT_AUTHORIZED.** Any future path requires a separate approved ADR, authenticated versioned contract, tenant/project scope, rights/provenance, deletion/reconciliation, security and evaluation evidence, and rollback. |
 | RusaModels ↔ RAG_Cerdas shared model/artifact/database access | None | No cross-repository contract identified. IM19 currently documents a pilot-local GGUF/CPU adapter | **NO CONTRACT / NOT_AUTHORIZED.** IM19 must not access RusaModels databases, object-store credentials, or private runtime ports. |
 | Dropbox OAuth/read-only source discovery | Dropbox → IM19 | RAG_Cerdas IM19 architecture and source-rights documentation | **External provider interface, not an ecosystem cross-repository contract.** Source access authorization and exact-version rights checks remain mandatory. |
 
@@ -210,7 +210,7 @@ Mandatory invariants:
 | ADR-0001 — Canonical RUSA AI knowledge store and RAG integration | RAG_Cerdas | Proposed historical comparison; superseded for ecosystem-level selection by the proposed RAG_Cerdas ADR-0002 alignment | Its no-selection hold point is no longer the ecosystem decision; retain comparative analysis as history |
 | ADR-0002 — RAG_Cerdas Alignment with the RusaAi Canonical Knowledge Store | RAG_Cerdas | Proposed in RAG_Cerdas PR #28; not merged at the snapshot used for this audit | Aligns IM19 as an isolated pilot and prohibits implicit data movement or public multi-tenant exposure |
 
-**ADR governance issue — OPEN_DECISION:** RusaAi currently has two files titled/numbered ADR-0002 in `docs/adr/`. Until a separately reviewed numbering correction is approved, references must use the full filename/title, not the ambiguous shorthand “RusaAi ADR-0002”. Do not silently renumber accepted decisions or break links.
+**ADR governance issue — OPEN_DECISION:** RusaAi currently has two files titled/numbered ADR-0002 in `docs/adr/`. Until a separately reviewed numbering correction is approved, references must use the full filename/title, not the ambiguous shorthand “RusaAi ADR-0002”. This document uses the full title and path for the canonical-store decision. Do not silently renumber accepted decisions or break links.
 
 ## 9. Open decisions and release blockers
 
@@ -241,4 +241,4 @@ This document does not authorize:
 - RusaAi ↔ RusaModels API integration: [RusaAi integration document](https://github.com/StrategyG/RusaAi/blob/main/docs/RUSAMODELS-INTEGRATION.md) and [RusaModels integration document](https://github.com/StrategyG/RusaModels/blob/main/docs/RUSAAI-INTEGRATION.md).
 - RusaModels service ownership: [RusaModels architecture](https://github.com/StrategyG/RusaModels/blob/main/docs/architecture.md) and [ADR-001](https://github.com/StrategyG/RusaModels/blob/main/docs/ADR-001-shared-control-plane.md).
 - IM19 pilot implementation boundary: [IM19 architecture](IM19_ARCHITECTURE.md), [source-rights procedure](IM19_SOURCE_RIGHTS.md), and [production readiness](PRODUCTION_READINESS.md).
-- RAG_Cerdas alignment: [ADR-0002](ADR_0002_RUSAAI_CANONICAL_KNOWLEDGE_STORE_ALIGNMENT.md) and [roadmap v1.2](RUSA_AI_RAG_CERDAS_PRODUCTION_ROADMAP_v1.2.md).
+- RAG_Cerdas alignment: [Alignment with the RusaAi Canonical Knowledge Store ADR](ADR_0002_RUSAAI_CANONICAL_KNOWLEDGE_STORE_ALIGNMENT.md) and [roadmap v1.2](RUSA_AI_RAG_CERDAS_PRODUCTION_ROADMAP_v1.2.md).
