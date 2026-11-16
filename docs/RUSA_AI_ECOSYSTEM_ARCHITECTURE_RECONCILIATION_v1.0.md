@@ -3,7 +3,7 @@
 - **Status:** Architecture/documentation alignment; not a production approval
 - **Scope:** StrategyG/RusaAi, StrategyG/RusaModels, StrategyG/RAG_Cerdas
 - **Primary authority:** RusaAi — [Canonical Shared Agent/Worker Knowledge Store ADR](https://github.com/StrategyG/RusaAi/blob/main/docs/adr/ADR-0002-canonical-shared-agent-worker-knowledge-store.md)
-- **Companion alignment:** RAG_Cerdas — [Alignment with the RusaAi Canonical Knowledge Store ADR](ADR_0002_RUSAAI_CANONICAL_KNOWLEDGE_STORE_ALIGNMENT.md) (proposed in PR #28)
+- **Companion alignment:** RAG_Cerdas — [Alignment with the RusaAi Canonical Knowledge Store ADR](ADR_0002_RUSAAI_CANONICAL_KNOWLEDGE_STORE_ALIGNMENT.md) (merged in PR #28 on 2026-11-16)
 - **Parent architecture authority:** RusaAi's `docs/architecture/ECOSYSTEM_ARCHITECTURE_RECONCILIATION_v1.0.md`; see [PR #117](https://github.com/StrategyG/RusaAi/pull/117) for the cross-repository review record. This RAG_Cerdas document is the IM19 alignment summary, not a competing architecture authority.
 - **Last repository snapshot:** 2026-11-14
 - **Production status:** NO-GO; no production activation is authorized by this document
@@ -207,8 +207,8 @@ Mandatory invariants:
 | ADR-0002 — Canonical Shared Agent/Worker Knowledge Store | RusaAi | Accepted by project owner for implementation planning; production activation not authorized | Selects RusaAi `rusa_knowledge` as the canonical shared store, subject to governance/security/release gates |
 | ADR-0002 — RusaModels owns the Model Plane | RusaAi | Accepted for repository integration alignment | RusaModels is the only production Model Plane; its statement that the canonical store is unresolved is superseded by the separate canonical-store ADR |
 | ADR-001 — Independent services and shared control plane | RusaModels | Accepted | Model Server and Quant Server remain separate service entry points using shared Model Plane PostgreSQL and S3-compatible artifact storage |
-| ADR-0001 — Canonical RUSA AI knowledge store and RAG integration | RAG_Cerdas | Proposed historical comparison; superseded for ecosystem-level selection by the proposed RAG_Cerdas ADR-0002 alignment | Its no-selection hold point is no longer the ecosystem decision; retain comparative analysis as history |
-| ADR-0002 — RAG_Cerdas Alignment with the RusaAi Canonical Knowledge Store | RAG_Cerdas | Proposed in RAG_Cerdas PR #28; not merged at the snapshot used for this audit | Aligns IM19 as an isolated pilot and prohibits implicit data movement or public multi-tenant exposure |
+| ADR-0001 — Canonical RUSA AI knowledge store and RAG integration | RAG_Cerdas | Historical comparison; superseded for ecosystem-level selection by the accepted RAG_Cerdas ADR-0002 alignment | Its no-selection hold point is no longer the ecosystem decision; retain comparative analysis as history |
+| ADR-0002 — RAG_Cerdas Alignment with the RusaAi Canonical Knowledge Store | RAG_Cerdas | Accepted repository alignment; merged in PR #28 on 2026-11-16 | Aligns IM19 as an isolated pilot and prohibits implicit data movement or public multi-tenant exposure |
 
 **ADR governance issue — OPEN_DECISION:** RusaAi currently has two files titled/numbered ADR-0002 in `docs/adr/`. Until a separately reviewed numbering correction is approved, references must use the full filename/title, not the ambiguous shorthand “RusaAi ADR-0002”. This document uses the full title and path for the canonical-store decision. Do not silently renumber accepted decisions or break links.
 

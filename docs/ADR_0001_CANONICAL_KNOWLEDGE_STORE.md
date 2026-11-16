@@ -1,11 +1,11 @@
 # ADR-0001 — Canonical RUSA AI knowledge store and RAG integration
 
-- **Status:** Historical comparison; its no-selection proposal is superseded by RusaAi's accepted “Canonical Shared Agent/Worker Knowledge Store” ADR; this repository's companion “Alignment with the RusaAi Canonical Knowledge Store” ADR is proposed in PR #28
+- **Status:** Historical comparison; its no-selection proposal is superseded by RusaAi's accepted “Canonical Shared Agent/Worker Knowledge Store” ADR; this repository's companion “Alignment with the RusaAi Canonical Knowledge Store” ADR was accepted and merged in PR #28 on 2026-11-16. Production activation remains NOT APPROVED.
 - **Date:** 2026-11-12
 - **Decision owners:** RUSA AI architecture, security, data governance, and operations
 - **Related:** RUSA AI Agent & Worker 5M Hybrid Corpus Expansion Plan v1.0; RusaAi Architecture v2.0; RAG_Cerdas IM19 Production Roadmap v1.2; [RAG_Cerdas Alignment with the RusaAi Canonical Knowledge Store ADR](ADR_0002_RUSAAI_CANONICAL_KNOWLEDGE_STORE_ALIGNMENT.md)
 
-> **Supersession notice (2026-11-13):** This ADR remains as historical comparison of candidate stores and their security/data-lifecycle properties. The ecosystem-level decision is recorded in RusaAi's accepted [Canonical Shared Agent/Worker Knowledge Store ADR](https://github.com/StrategyG/RusaAi/blob/main/docs/adr/ADR-0002-canonical-shared-agent-worker-knowledge-store.md), which selects RusaAi `rusa_knowledge` for implementation planning. This repository's proposed companion [Alignment with the RusaAi Canonical Knowledge Store ADR](ADR_0002_RUSAAI_CANONICAL_KNOWLEDGE_STORE_ALIGNMENT.md) is under review in PR #28 and is not yet merged to `main`. The parent decision does not authorize production activation, migration, cross-system reads/writes, or data movement.
+> **Supersession notice (2026-11-13):** This ADR remains as historical comparison of candidate stores and their security/data-lifecycle properties. The ecosystem-level decision is recorded in RusaAi's accepted [Canonical Shared Agent/Worker Knowledge Store ADR](https://github.com/StrategyG/RusaAi/blob/main/docs/adr/ADR-0002-canonical-shared-agent-worker-knowledge-store.md), which selects RusaAi `rusa_knowledge` for implementation planning. This repository's companion [Alignment with the RusaAi Canonical Knowledge Store ADR](ADR_0002_RUSAAI_CANONICAL_KNOWLEDGE_STORE_ALIGNMENT.md) was merged to `main` in PR #28 on 2026-11-16. The parent decision still does not authorize production activation, migration, cross-system reads/writes, or data movement. The parent decision does not authorize production activation, migration, cross-system reads/writes, or data movement.
 
 ## 1. Context
 

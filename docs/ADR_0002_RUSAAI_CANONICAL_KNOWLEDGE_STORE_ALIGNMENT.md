@@ -1,6 +1,6 @@
 # ADR-0002 — RAG_Cerdas Alignment with the RusaAi Canonical Knowledge Store
 
-- **Status:** Proposed in PR #28 for architecture/documentation alignment; source decision remains accepted in RusaAi's “Canonical Shared Agent/Worker Knowledge Store” ADR; production activation remains NOT APPROVED
+- **Status:** Accepted repository alignment; merged to `main` in PR #28 on 2026-11-16. The parent source decision remains accepted for implementation planning; production activation remains NOT APPROVED.
 - **Date:** 2026-11-13
 - **Decision authority:** RusaAi project-owner decision recorded in the “Canonical Shared Agent/Worker Knowledge Store” ADR
 - **Scope:** RAG_Cerdas / IM19 ownership boundary within the RUSA AI ecosystem
