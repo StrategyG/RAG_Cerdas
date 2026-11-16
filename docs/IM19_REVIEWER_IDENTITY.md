@@ -1,6 +1,6 @@
 # IM19 reviewer-principal identity contract
 
-**Status:** Implemented in the P0 reviewer-principal branch; pending disposable PostgreSQL CI and review.  
+**Status:** Implemented on `main`; disposable PostgreSQL/pgvector tests passed in CI run [43680080103](https://github.com/StrategyG/RAG_Cerdas/actions/runs/43680080103) (240 tests passed). This verifies database-principal binding and reviewer-role negative tests; it does not provide SSO/MFA, external identity proofing, account lifecycle automation, or tenant/project authorization.  
 **Scope:** Human publication approvals and source-rights decisions in the private IM19 pilot.
 
 ## Security contract
