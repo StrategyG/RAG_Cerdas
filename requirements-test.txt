@@ -8,3 +8,4 @@ defusedxml>=0.7.1,<1
 pytesseract>=0.3.13,<1
 Pillow>=10.4,<13
 pgserver==0.1.4
+jsonschema==4.26.0
